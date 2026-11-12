@@ -110,6 +110,7 @@ fn harness(max_agents: u32, args: &[&str]) -> Option<Harness> {
     });
     let auth_failures = Arc::new(Mutex::new(Vec::new()));
     let runner = Runner::new(RunnerConfig {
+        one_shot: None,
         admission: admission.clone(),
         launch: Arc::new(FixtureLaunch(ProviderLaunch {
             config,
@@ -424,6 +425,7 @@ async fn a_pump_ending_without_an_exit_record_settles_it_as_lost() {
     let dir = tempfile::tempdir().unwrap();
     let storage = Arc::new(Storage::open(&dir.path().join("node"), None).unwrap());
     let runner = Runner::new(RunnerConfig {
+        one_shot: None,
         admission: Arc::new(CountAdmission {
             cap: 1,
             running: Mutex::new(Vec::new()),

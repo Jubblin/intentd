@@ -1449,6 +1449,10 @@ pub struct Services {
     /// daemon's own orchestration is off. Fixed by the composition root via
     /// [`Services::with_node_mode`] before any listener serves.
     node_mode: bool,
+    /// Orchestrator mode (`daemon.mode = "orchestrator"`): no provider
+    /// process ever starts here. Set once by
+    /// [`Services::with_orchestrator_mode`] before any listener serves.
+    orchestrator_mode: bool,
     /// Wall-clock budget for one hook script run (60 s in production). Tests
     /// compress it via the `#[cfg(test)]`-only `with_hook_eval_timeout` so
     /// timeout-eviction coverage completes in milliseconds.
@@ -1951,6 +1955,7 @@ impl Services {
             ac_status_inflight: Arc::new(ac_status_singleflight::AcStatusSingleFlight::default()),
             hooks_max_per_agent: intent_core::config::DEFAULT_HOOKS_MAX_PER_AGENT,
             node_mode: false,
+            orchestrator_mode: false,
             hook_eval_timeout: runtime_config::HOOK_EVAL_TIMEOUT,
             hook_clock_skew: None,
             hook_store_retry_base: runtime_config::HOOK_STORE_RETRY_BASE,
@@ -2199,11 +2204,50 @@ impl Services {
         self.node_mode
     }
 
+    /// Run as an orchestrator (nodes.md "Orchestrator mode"): agents only
+    /// run on other machines and no provider process starts here. Set once
+    /// by the composition root, before any listener serves.
+    #[must_use]
+    pub fn with_orchestrator_mode(mut self, orchestrator_mode: bool) -> Self {
+        self.orchestrator_mode = orchestrator_mode;
+        self
+    }
+
+    /// Whether this daemon runs as an orchestrator.
+    #[must_use]
+    pub fn orchestrator_mode(&self) -> bool {
+        self.orchestrator_mode
+    }
+
     /// Whether this daemon may run agents on its own host: the "This
-    /// computer" row of the ordered machine list.
+    /// computer" row of the ordered machine list. `false` on an
+    /// orchestrator.
     #[must_use]
     pub fn may_run_agents_locally(&self) -> bool {
-        true
+        !self.orchestrator_mode
+    }
+
+    /// The one gate every site that starts a provider process passes
+    /// (nodes.md "Orchestrator mode" → "One gate"): `false` on an
+    /// orchestrator.
+    #[must_use]
+    pub fn may_spawn_provider_locally(&self) -> bool {
+        !self.orchestrator_mode
+    }
+
+    /// The orchestrator-mode refusal of `what` (`-32003`,
+    /// `data.code: "orchestrator-mode"`), or `Ok` on any other daemon.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::OrchestratorMode`] on an orchestrator.
+    pub fn refuse_in_orchestrator_mode(&self, what: &str) -> Result<()> {
+        if self.orchestrator_mode {
+            return Err(Error::OrchestratorMode(format!(
+                "{what} is off: this backend runs agents only on other machines"
+            )));
+        }
+        Ok(())
     }
 
     /// The node-mode refusal of a local front door that would start work.
@@ -18272,6 +18316,17 @@ impl WorkspaceApi for Services {
         self.node_mode
     }
 
+    fn daemon_mode(&self) -> intent_core::settings_file::DaemonMode {
+        use intent_core::settings_file::DaemonMode;
+        if self.node_mode {
+            DaemonMode::Node
+        } else if self.orchestrator_mode {
+            DaemonMode::Orchestrator
+        } else {
+            DaemonMode::Regular
+        }
+    }
+
     fn remote_machines_capability(&self) -> bool {
         !self.node_mode && self.ports.remote_launch().manages_machines()
     }
@@ -18320,6 +18375,9 @@ impl WorkspaceApi for Services {
         repository_native_wire::child_git::credential(self, query)
     }
     fn prepare_provider_adapters(&self, provider_ids: Vec<String>) {
+        if !self.may_spawn_provider_locally() {
+            return;
+        }
         self.provider_preparation
             .enqueue(provider_ids, self.effective_settings());
     }
@@ -18658,6 +18716,14 @@ impl WorkspaceApi for Services {
             // Saved profile summaries ride alongside the per-type rows
             // (PROTOCOL §5.54); `providers` stays one row per provider type.
             let mut catalog = provider_catalog::build_providers_catalog();
+            if !self.may_spawn_provider_locally() {
+                // No test prompt runs on an orchestrator.
+                if let Some(rows) = catalog["providers"].as_array_mut() {
+                    for row in rows {
+                        row["supportsTestPrompt"] = serde_json::Value::Bool(false);
+                    }
+                }
+            }
             // Profile and Default names are host settings: a guest's read
             // keeps the shape but names none of them (§5.54 "Guest reads").
             let guest = self.catalog_caller_is_guest().await?;
@@ -21455,7 +21521,12 @@ impl WorkspaceApi for Services {
                                 }
                                 boxed_await(|| services.admit_remote_initial_agent(&mut plan))
                                     .await?;
-                            } else if input.plain_folder != Some(true) {
+                            } else if input.plain_folder == Some(true) {
+                                // A plain folder cannot start anywhere else.
+                                services.refuse_in_orchestrator_mode(
+                                    "an initial agent in a plain folder",
+                                )?;
+                            } else {
                                 // No placement: walk the ordered machine
                                 // list (nodes.md "Ordered machine list").
                                 boxed_await(|| services.admit_remote_initial_agent(&mut plan))

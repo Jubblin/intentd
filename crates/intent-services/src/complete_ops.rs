@@ -479,6 +479,27 @@ impl Services {
             reasoning_effort.as_deref(),
         );
 
+        // An orchestrator runs the one-shot on a machine (agent-aux.md
+        // "Quick actions on an orchestrator"), never here.
+        if !self.may_spawn_provider_locally() {
+            let system_prompt = system_prompt
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            let timeout = timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS).min(MAX_TIMEOUT_MS);
+            return self
+                .complete_once_on_machine(
+                    &run_provider,
+                    &prompt,
+                    system_prompt,
+                    model.as_deref(),
+                    workspace_id,
+                    timeout,
+                    &effort,
+                )
+                .await;
+        }
+
         // Optional cwd pin: unknown workspace surfaces as -32602 (NotFound);
         // a workspace without a filesystem root just runs without a cwd
         // (mirrors §5.31).
@@ -522,9 +543,31 @@ impl Services {
         }
         let full_prompt = compose_prompt(&prompt, system_prompt);
 
+        let auggie = self.one_shot_auggie_bin()?;
+        let stdout = run_auggie_print(
+            &auggie,
+            model.as_deref(),
+            cwd.as_deref(),
+            &full_prompt,
+            timeout,
+            "One-shot completion",
+        )
+        .await?;
+        let text = clean_agent_message(&stdout);
+        Ok(json!({ "text": text }))
+    }
+
+    /// The auggie CLI for a one-shot: the test seam, else
+    /// `context.auggiePath` (exclusive when set), else discovery.
+    ///
+    /// # Errors
+    ///
+    /// A set `context.auggiePath` that is not a file, or no CLI found.
+    pub(crate) fn one_shot_auggie_bin(&self) -> Result<PathBuf> {
         // Binary resolution order (per spec Design): self.auggie_bin (test seam) →
         // context.auggiePath (user setting, EXCLUSIVE when set) → find_auggie().
-        let auggie = match &self.auggie_bin {
+        let settings = self.effective_settings();
+        Ok(match &self.auggie_bin {
             Some(bin) => bin.clone(),
             None => {
                 // Check context.auggiePath first; when set and non-empty, use it
@@ -553,18 +596,7 @@ impl Services {
                     }
                 }
             }
-        };
-        let stdout = run_auggie_print(
-            &auggie,
-            model.as_deref(),
-            cwd.as_deref(),
-            &full_prompt,
-            timeout,
-            "One-shot completion",
-        )
-        .await?;
-        let text = clean_agent_message(&stdout);
-        Ok(json!({ "text": text }))
+        })
     }
 
     /// The non-auggie route with backup failover (PROTOCOL §5.54 Backup
@@ -924,6 +956,8 @@ fn is_quota_rejection(err: &OneShotError) -> bool {
     matches!(err, OneShotError::Rpc(_) | OneShotError::Exited(_))
         && intent_acp::message_is_quota_exceeded(&err.to_string())
 }
+
+mod remote;
 
 #[cfg(test)]
 mod tests {

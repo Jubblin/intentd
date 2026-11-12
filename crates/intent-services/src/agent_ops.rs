@@ -3305,7 +3305,12 @@ pub(crate) fn reject_self_targeted_send(
 
 /// The sentence a sub-agent's inherited-placement failure ends with: why
 /// it went to `node_name` and how to run it on the backend instead.
-fn inherited_placement_hint(node_name: &str) -> String {
+fn inherited_placement_hint(node_name: &str, backend_runs_agents: bool) -> String {
+    if !backend_runs_agents {
+        return format!(
+            "The sub-agent defaults to \"{node_name}\" because its parent runs there."
+        );
+    }
     format!(
         "The sub-agent defaults to \"{node_name}\" because its parent runs there; pass placement {{ target: \"local\" }} to run it on the backend."
     )
@@ -6044,6 +6049,9 @@ impl Services {
             Some(placement) => placement.runs_on_backend()?,
             None => false,
         };
+        if on_backend {
+            self.refuse_in_orchestrator_mode("placement target \"local\"")?;
+        }
         let unplaced = requested.is_none();
         let (placement, inherited_from) = match requested {
             Some(_) if on_backend => (None, None),
@@ -6058,7 +6066,8 @@ impl Services {
         };
         let walked = if unplaced
             && placement.is_none()
-            && !Self::created_by_local_parent(plan.parent_agent_id.as_ref())
+            && !(self.may_run_agents_locally()
+                && Self::created_by_local_parent(plan.parent_agent_id.as_ref()))
         {
             self.walk_machine_order(&plan.provider, |placement| {
                 let workspace_id = &workspace_id;
@@ -6103,7 +6112,7 @@ impl Services {
                     view
                 }
                 (Err(error), Some(node_name)) => {
-                    return Err(error.with_hint(&inherited_placement_hint(&node_name)))
+                    return Err(error.with_hint(&inherited_placement_hint(&node_name, self.may_run_agents_locally())))
                 }
                 (Err(error), None) => return Err(error),
             };
@@ -6524,7 +6533,7 @@ impl Services {
                 .await;
         };
         if placement.runs_on_backend()? {
-            return Ok(());
+            return self.refuse_in_orchestrator_mode("placement target \"local\"");
         }
         let model = plan.model.clone();
         let admit = |reference: String, profile_fallback: bool| {
@@ -9565,6 +9574,15 @@ impl Services {
         provider_id: Option<String>,
         force_refresh: bool,
     ) -> Result<Value> {
+        if !self.may_spawn_provider_locally() {
+            // No local catalog on an orchestrator: model pickers read the
+            // machines' reports (`remoteMachines.models`).
+            let mut empty = json!({ "models": [], "source": "static" });
+            if let Some(provider_id) = provider_id {
+                empty["providerId"] = Value::String(provider_id);
+            }
+            return Ok(empty);
+        }
         let Some(provider_id) = provider_id else {
             return self.models_list_auggie_op(force_refresh, false).await;
         };

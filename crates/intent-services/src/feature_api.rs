@@ -101,7 +101,8 @@ pub mod feature_ports {
     pub use crate::feature_ports::{
         monitor_id, wake_id, AgentWakePort, ArchiveScriptOutcome, ArchiveScriptRun,
         ArchiveScriptTrigger, CancelSettlement, CommandScriptActivity, MachineScriptLink,
-        MachineSecretAnswer, MachineSecretOp, MachineSkills, RemoteLaunchPort, RemoteRuntime,
+        MachineOneShotAnswer, MachineOneShotRequest, MachineSecretAnswer, MachineSecretOp,
+        MachineSkills, RemoteLaunchPort, RemoteRuntime, NO_QUICK_ACTION_MACHINE,
         RemoteScriptCaller, RuntimePort, ScriptFrameSender, ScriptsClosing, SetupScriptRun,
         TransferPort, UnavailableAgentWake, UnavailableRemoteLaunch, ARCHIVE_SCRIPT_TIMEOUT,
         IMPORT_MAX_CHUNK_BYTES,
