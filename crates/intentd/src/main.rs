@@ -10884,22 +10884,21 @@ for line in sys.stdin:
     #[test]
     fn the_daemon_mode_is_the_flag_or_the_setting() {
         use intent_core::settings_file::DaemonMode;
-        let none = None;
         assert_eq!(
-            resolve_daemon_mode(none, DaemonMode::Regular),
+            resolve_daemon_mode(None, DaemonMode::Regular),
             DaemonMode::Regular
         );
         assert_eq!(
-            resolve_daemon_mode(none, DaemonMode::Node),
+            resolve_daemon_mode(None, DaemonMode::Node),
             DaemonMode::Node
         );
         assert_eq!(
-            resolve_daemon_mode(none, DaemonMode::Orchestrator),
+            resolve_daemon_mode(None, DaemonMode::Orchestrator),
             DaemonMode::Orchestrator
         );
-        let node = mode_flag(true, false);
+        let node_flag = mode_flag(true, false);
         assert_eq!(
-            resolve_daemon_mode(node, DaemonMode::Orchestrator),
+            resolve_daemon_mode(node_flag, DaemonMode::Orchestrator),
             DaemonMode::Node
         );
         let orchestrator = mode_flag(false, true);

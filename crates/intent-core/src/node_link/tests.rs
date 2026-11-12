@@ -107,9 +107,10 @@ fn the_daemon_to_daemon_link_speaks_protocols_7_to_16() {
     assert_eq!(SECRETS_PROTOCOL, 14);
     assert_eq!(FORGE_TOKEN_PROTOCOL, 15);
     assert_eq!(CHECKOUT_FILES_PROTOCOL, 16);
-    assert_eq!(FORGE_FETCH_PROTOCOL, NODE_LINK_PROTOCOLS.max);
+    assert_eq!(FORGE_FETCH_PROTOCOL, 17);
+    assert_eq!(ONE_SHOT_PROTOCOL, NODE_LINK_PROTOCOLS.max);
     assert!(offers_prepared_checkout());
-    for version in 7..=17 {
+    for version in 7..=18 {
         ensure_protocol(version).unwrap();
     }
     for peer in [0, 4, 5, 6, NODE_LINK_PROTOCOLS.max + 1] {
@@ -405,6 +406,7 @@ fn every_frame_is_classified_for_executors_consistently_with_the_list() {
             "checkoutReadReply",
             "forgeTokenReply",
             "journal",
+            "oneShotReply",
             "pushWipReply",
             "replayComplete",
             "request",
@@ -731,7 +733,7 @@ fn frames_are_routed_to_their_lane() {
             Control, Journal, Journal, Journal, Journal, Journal, Rpc, Rpc, Rpc, Rpc, Control,
             Control, Script, Script, Script, Script, Script, Control, Control, Journal, Control,
             Control, Control, Control, Control, Control, Control, Control, Control, Script, Script,
-            Script
+            Script, Rpc, Rpc, Rpc
         ]
     );
 }

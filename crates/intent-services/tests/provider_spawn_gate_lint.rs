@@ -59,6 +59,10 @@ const SITES: &[(&str, Spawn)] = &[
         Spawn::Provider("models_list_op"),
     ),
     (
+        "codex_diagnostics/process/linux.rs",
+        Spawn::Provider("models_list_op (the codex probe's supervisor)"),
+    ),
+    (
         "cursor_cli.rs",
         Spawn::Provider("host.providerDiscovery / executor_provider_capabilities"),
     ),
