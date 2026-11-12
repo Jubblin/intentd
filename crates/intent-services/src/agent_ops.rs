@@ -3303,8 +3303,22 @@ pub(crate) fn reject_self_targeted_send(
     Ok(())
 }
 
+/// Whether `error` is a row refusing a placement (the walk tries the next
+/// row) rather than a failure of the backend itself.
+fn is_placement_refusal(error: &Error) -> bool {
+    match error {
+        Error::PlacementUnavailable(_)
+        | Error::ModelUnavailable(_)
+        | Error::MachineUpdateRequired(_)
+        | Error::InvalidParams(_) => true,
+        Error::ProviderProfile(failure) | Error::RemoteMachine(failure) => !failure.internal,
+        _ => false,
+    }
+}
+
 /// The sentence a sub-agent's inherited-placement failure ends with: why
-/// it went to `node_name` and how to run it on the backend instead.
+/// it went to `node_name` and, where this backend runs agents, how to run
+/// it here instead.
 fn inherited_placement_hint(node_name: &str, backend_runs_agents: bool) -> String {
     if !backend_runs_agents {
         return format!(
@@ -6249,9 +6263,13 @@ impl Services {
             };
             match admit(placement).await {
                 Ok(admitted) => return Ok(Some(admitted)),
-                Err(error) => {
+                // Only a row that refuses the placement is passed over; a
+                // store or internal failure stops the walk, so it never
+                // quietly lands the agent on a lower row.
+                Err(error) if is_placement_refusal(&error) => {
                     first_refusal.get_or_insert(error);
                 }
+                Err(error) => return Err(error),
             }
         }
         match first_refusal {
@@ -7264,6 +7282,7 @@ impl Services {
                 "{method}: encode agentFeatures snapshot failed: {e}"
             ))
         })?;
+        // agent-session-literal: allow — agent creation decides every field of a new session; a new field has to fail to compile here until its create-time value is chosen
         let session = AgentSession {
             id,
             workspace_id,
