@@ -17385,6 +17385,10 @@ impl Services {
         // BOTH branches via `deliver_wake_message`.
         if let Some(session) = live_session {
             let agent_id = session.id.clone();
+            // A pre-switch local agent never wakes on an orchestrator: refused
+            // before any queue migration or delivery.
+            self.refuse_local_agent_in_orchestrator_mode(&agent_id, "agent.wakeOrCreate")
+                .await?;
             let agent_name = session.name.clone();
             let agent_status = serde_json::to_value(session.status)
                 .ok()

@@ -3016,15 +3016,18 @@ async fn quick_actions_end_on_cancel_and_on_link_loss() {
     let runner = quick_action_runner(dir.path());
     let first = tokio::spawn({
         let runner = runner.clone();
-        async move { runner.one_shot(quick_action(1)).await }
+        let cancelled = runner.begin_one_shot(uuid::Uuid::from_u128(1));
+        async move { runner.one_shot(quick_action(1), cancelled).await }
     });
     let second = tokio::spawn({
         let runner = runner.clone();
-        async move { runner.one_shot(quick_action(2)).await }
+        let cancelled = runner.begin_one_shot(uuid::Uuid::from_u128(2));
+        async move { runner.one_shot(quick_action(2), cancelled).await }
     });
     let third = tokio::spawn({
         let runner = runner.clone();
-        async move { runner.one_shot(quick_action(3)).await }
+        let cancelled = runner.begin_one_shot(uuid::Uuid::from_u128(3));
+        async move { runner.one_shot(quick_action(3), cancelled).await }
     });
     let deadline = tokio::time::Instant::now() + wait();
     while lock(&runner.inner.one_shots).len() < 3 {

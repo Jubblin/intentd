@@ -1003,13 +1003,27 @@ impl Runner {
 
     /// Run a backend's quick action (`oneShot`, nodeProtocol 18) and return
     /// its reply; `oneShotCancel` with the same id ends it as `cancelled`.
+    /// Register a quick action before its task runs, so a cancel or the
+    /// end of its link always finds it; pass the receiver to
+    /// [`Self::one_shot`].
+    pub(super) fn begin_one_shot(
+        &self,
+        id: intent_core::node_link::LinkId,
+    ) -> tokio::sync::oneshot::Receiver<()> {
+        let (cancel, cancelled) = tokio::sync::oneshot::channel();
+        lock(&self.inner.one_shots).insert(id, cancel);
+        cancelled
+    }
+
     pub(super) async fn one_shot(
         &self,
         frame: intent_core::node_link::OneShot,
+        cancelled: tokio::sync::oneshot::Receiver<()>,
     ) -> intent_core::node_link::OneShotReply {
         use intent_core::node_link::{OneShotOutcome, OneShotReply};
         let id = frame.request_id;
         let Some(runs) = self.inner.one_shot.clone() else {
+            lock(&self.inner.one_shots).remove(&id);
             return OneShotReply::refused(
                 id,
                 OneShotOutcome::Unavailable,
@@ -1025,11 +1039,10 @@ impl Runner {
             None => None,
             Some(Ok(profile)) => Some(profile),
             Some(Err(error)) => {
-                return OneShotReply::refused(id, OneShotOutcome::Failed, "adapter-failed", error)
+                lock(&self.inner.one_shots).remove(&id);
+                return OneShotReply::refused(id, OneShotOutcome::Failed, "adapter-failed", error);
             }
         };
-        let (cancel, cancelled) = tokio::sync::oneshot::channel();
-        lock(&self.inner.one_shots).insert(id, cancel);
         let reply = tokio::select! {
             reply = runs.run(frame, profile) => reply,
             _ = cancelled => OneShotReply {

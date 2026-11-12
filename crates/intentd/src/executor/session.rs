@@ -390,9 +390,12 @@ pub(super) async fn serve_link(
             LinkEvent::Frame(LinkFrame::OneShot(frame)) if protocol >= ONE_SHOT_PROTOCOL => {
                 let link = link.clone();
                 let runner = runner.clone();
+                // Registered here, before the task runs, so this link's end
+                // always cancels it.
+                let cancelled = runner.begin_one_shot(frame.request_id);
                 // caller-binding: allow — answers one quick action on its link
                 tokio::spawn(async move {
-                    let reply = runner.one_shot(frame).await;
+                    let reply = runner.one_shot(frame, cancelled).await;
                     let _ = link.send(&LinkFrame::OneShotReply(reply)).await;
                 });
             }
