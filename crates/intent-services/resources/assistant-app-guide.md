@@ -743,51 +743,13 @@ views identify the repository in the page heading.
 
 **Home → Workspaces** has a **This machine / All machines** switch. **All machines**
 lists the workspaces on every connected machine, one section per machine (this
-window's machine first). It is read-only for now: rows show title, repository and
-branch, status and last activity, but do not open. An offline or slow machine shows
-its own message and **Retry** while the others still list; **Refresh** reloads all.
-Only the desktop app can reach other machines: in the web build, **All machines** says
-it needs the desktop app.
-
-Selecting a workspace opens its preview on the top-level agent (not a background or
-delegated agent) with the most recent activity; a workspace with no top-level agent
-left opens on its most recently active remaining agent. The preview keeps that agent
-while it stays open unless the agent is retired or deleted. Choose another from the
-agent menu above the chat; Home remembers that choice for the workspace until the app
-restarts, the account or connection changes, or Home is reset.
-
-The conversation header's **More** menu groups **Rename**, **Copy conversation**,
-**Tasks**, and **Prompts** under **Conversation**. **Settings** contains **Font**
-and per-agent **Notifications**; lifecycle actions appear under **Agent** when
-available. The footer shows specialist and harness metadata when present; select
-the harness version for details. **Move Panel** opens the pane movement submenu.
-In companion test builds with direct movement controls, the **Move Panel** arrows
-appear directly in panel menus; choose an available arrow to move the panel.
-Other panel menus place **Rename** under **Actions** when renaming is available.
-
-The harness details list the agent's features as **On** or **Off**; hover or focus
-a feature to read its description. When the agent's harness records it, the details
-first show **Starting context**: the approximate size in tokens, then up to three
-groups with their summed sizes: **Native** (text the provider loads by itself, such
-as repo rules, marked **Not in total**), **User** (text from the user's own files and
-settings, such as repo rules and skills) and **Intent** (text Intent writes). Open a
-group to list its parts largest first. Skills that were left out of the agent are
-counted under **Hidden skills**; open it to see each skill and how to enable it. Agents
-on older harnesses, and agents that have not started yet, show only the features.
-Sizes are estimates, not provider token counts.
-
-When an agent shows a browser tab while its chat is on screen, the tab opens in the
-column next to that chat (right first, then left). It never covers the column you
-are working in; if no other neighbor is free, the view splits beside the chat.
-Keyboard focus stays where it was. When the chat is not on screen,
-Intent picks a panel for the tab without moving focus.
-
-<!-- Sources (paths relative to packages/cloudlands-fe): src/features/layout/tab-types/{AgentTabType,AgentViewSettingsDropdown}.svelte; src/lib/components/chat/HarnessFeaturesModal.svelte; src/features/agent/prompt-breakdown/PromptBreakdownPanel.svelte; src/lib/components/layout/panel-system/PanelTabBar.svelte; src/store/renderer/slices/panel-layout/panel-layout-slice.ts. -->
-
-**Retire Agent** stops an agent and keeps its conversation so it can be restored later.
-You can retire any agent, including a workspace's last top-level agent. An agent
-cannot retire itself while it is the workspace's last top-level agent. Delegated
-agents can always be retired.
+window's machine first): title, repository and branch, status and last activity.
+Select a workspace, or move with the arrow keys and press Enter, to open it in that
+machine's own window (opened or focused first). An offline or slow machine shows its
+own message and **Retry** while the others still list; **Refresh** reloads all. If a
+machine's window cannot be opened, that machine's section says so. Only the desktop
+app can reach other machines: in the web build, **All machines** says it needs the
+desktop app.
 
 Grouped by status, Home sorts workspaces into **Needs you**, **Running**, **Waiting**,
 and **Done & idle**, in that priority order. **Running** covers an agent at work, a
