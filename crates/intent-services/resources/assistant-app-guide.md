@@ -746,6 +746,8 @@ lists the workspaces on every connected machine, one section per machine (this
 window's machine first). It is read-only for now: rows show title, repository and
 branch, status and last activity, but do not open. An offline or slow machine shows
 its own message and **Retry** while the others still list; **Refresh** reloads all.
+Only the desktop app can reach other machines: in the web build, **All machines** says
+it needs the desktop app.
 
 Selecting a workspace opens its preview on the top-level agent (not a background or
 delegated agent) with the most recent activity; a workspace with no top-level agent
