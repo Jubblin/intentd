@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use intent_core::node_link::{
-    EffortCandidates, LaunchProfileEnv, OneShot, OneShotCompleteInput, OneShotEnhanceInput,
-    OneShotInput, OneShotOperation, OneShotOutcome, OneShotReply,
+    EffortCandidates, EnhanceMode, LaunchProfileEnv, OneShot, OneShotCompleteInput,
+    OneShotEnhanceInput, OneShotInput, OneShotOperation, OneShotOutcome, OneShotReply,
 };
 use intent_core::{Error, Result, WorkspaceId};
 use serde_json::{json, Value};
@@ -81,16 +81,44 @@ impl Services {
         timeout_ms: u64,
         effort: &OneShotEffort,
     ) -> Result<Value> {
+        // What the local route decides before it spawns anything is decided
+        // here too, before any machine is picked.
+        if let Some(id) = &workspace_id {
+            self.store.get_workspace(id).await?;
+        }
+        let base = intent_providers::base_provider_id(selection);
+        if base != "auggie" && !super::ACP_ONE_SHOT_PROVIDERS.contains(&base) {
+            return Ok(unavailable(format!(
+                "completeOnce is not supported for the resolved provider: {base}"
+            )));
+        }
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         let home = crate::provider_profiles::canonical_selection(selection);
         let mut current = home.clone();
         let mut tried = Vec::new();
         let mut pinned: Option<String> = None;
+        let mut last_quota: Option<Error> = None;
         loop {
             tried.push(current.clone());
-            let plan = self
+            let plan = match self
                 .remote_launch_plan(&current, RemoteTarget::Machine)
-                .await?;
+                .await
+            {
+                Ok(plan) => plan,
+                // A backup that cannot run on a machine (an account folder)
+                // is passed over; the first configuration's refusal stands.
+                Err(error) => match last_quota.take() {
+                    None => return Err(error),
+                    Some(quota) => match self.quick_action_backup(&current, &home, Some(&tried)) {
+                        Some(next) => {
+                            last_quota = Some(quota);
+                            current = next;
+                            continue;
+                        }
+                        None => return Err(quota),
+                    },
+                },
+            };
             let provider = intent_providers::base_provider_id(&current).to_owned();
             let remaining = deadline.saturating_duration_since(Instant::now());
             let frame = OneShot {
@@ -137,6 +165,11 @@ impl Services {
                         "{machine} went away before it answered the quick action"
                     )))
                 }
+                MachineOneShotAnswer::TimedOut { timeout_ms, .. } => {
+                    return Err(Error::Internal(format!(
+                        "{provider}: timed out after {timeout_ms}ms"
+                    )))
+                }
                 MachineOneShotAnswer::Replied {
                     node_id,
                     machine,
@@ -156,6 +189,7 @@ impl Services {
             };
             tracing::info!(from_provider = %current, to_provider = %next, "quick action out of quota on its machine; retrying on a backup profile there");
             pinned = Some(node_id);
+            last_quota = Some(quota_error);
             current = next;
         }
     }
@@ -178,7 +212,11 @@ impl Services {
             operation: OneShotOperation::Enhance,
             input: OneShotInput::Enhance(OneShotEnhanceInput {
                 prompt: prompt.clone(),
-                mode: mode.clone(),
+                mode: if mode == "layout" {
+                    EnhanceMode::Layout
+                } else {
+                    EnhanceMode::Enhance
+                },
                 model,
             }),
             profile_env: None,
@@ -206,6 +244,9 @@ impl Services {
                 "available": false,
                 "reason": format!("{machine} went away before it answered the quick action"),
             })),
+            MachineOneShotAnswer::TimedOut { timeout_ms, .. } => Err(Error::Internal(format!(
+                "auggie: timed out after {timeout_ms}ms"
+            ))),
             MachineOneShotAnswer::Replied { machine, reply, .. } => {
                 match map_reply("auggie", &machine, reply) {
                     Mapped::Done(value) => match value.get("text").and_then(Value::as_str) {
@@ -255,15 +296,6 @@ impl Services {
                 error.to_string(),
             );
         }
-        if crate::acp_adapter::adapter_slots().live()
-            >= crate::acp_adapter::adapter_slots().limit() as usize
-        {
-            return refuse(
-                OneShotOutcome::Unavailable,
-                codes::NO_CAPACITY,
-                "every adapter slot is busy (agents.maxConcurrentAdapters)".to_owned(),
-            );
-        }
         let timeout = frame.timeout_ms.clamp(1, super::MAX_TIMEOUT_MS);
         match frame.input {
             OneShotInput::Enhance(input) if frame.operation == OneShotOperation::Enhance => {
@@ -280,7 +312,7 @@ impl Services {
                 match crate::enhance_ops::enhance_with_auggie(
                     &auggie,
                     &input.prompt,
-                    &input.mode,
+                    input.mode.as_str(),
                     input.model.as_deref(),
                     None,
                     timeout,
@@ -296,7 +328,7 @@ impl Services {
                     Err(error) => refuse(
                         OneShotOutcome::Failed,
                         failure_code(&error),
-                        error.to_string(),
+                        bare_message("auggie", &error),
                     ),
                 }
             }
@@ -307,20 +339,24 @@ impl Services {
                         .await
                         .map_err(AttemptFailure::from)
                 } else {
-                    self.complete_once_attempt(
-                        &input.provider_id,
-                        &input.prompt,
-                        input.system_prompt.as_deref(),
-                        input.model.as_deref(),
-                        None,
-                        timeout,
-                        &OneShotEffort {
-                            explicit: effort.requested,
-                            saved: effort.saved,
-                        },
-                        profile.map(Arc::new),
-                    )
-                    .await
+                    crate::acp_adapter::NEVER_QUEUE
+                        .scope(
+                            (),
+                            self.complete_once_attempt(
+                                &input.provider_id,
+                                &input.prompt,
+                                input.system_prompt.as_deref(),
+                                input.model.as_deref(),
+                                None,
+                                timeout,
+                                &OneShotEffort {
+                                    explicit: effort.requested,
+                                    saved: effort.saved,
+                                },
+                                profile.map(Arc::new),
+                            ),
+                        )
+                        .await
                 };
                 match result {
                     Ok(value) => match value.get("text").and_then(Value::as_str) {
@@ -332,20 +368,36 @@ impl Services {
                         },
                         None => refuse(
                             OneShotOutcome::Unavailable,
-                            codes::CLI_MISSING,
+                            if value["reason"]
+                                .as_str()
+                                .is_some_and(|r| r.contains("not supported"))
+                            {
+                                codes::GATE_CLOSED
+                            } else {
+                                codes::CLI_MISSING
+                            },
                             value["reason"]
                                 .as_str()
                                 .unwrap_or("not available")
                                 .to_owned(),
                         ),
                     },
+                    Err(failure) if is_slot_refusal(&failure.error) => refuse(
+                        OneShotOutcome::Unavailable,
+                        codes::NO_CAPACITY,
+                        "every adapter slot is busy (agents.maxConcurrentAdapters)".to_owned(),
+                    ),
                     Err(failure) => {
                         let code = match failure.kind {
                             FailureKind::Quota => codes::QUOTA,
                             FailureKind::Timeout => codes::TIMEOUT,
                             FailureKind::Other => failure_code(&failure.error),
                         };
-                        refuse(OneShotOutcome::Failed, code, failure.error.to_string())
+                        refuse(
+                            OneShotOutcome::Failed,
+                            code,
+                            bare_message(&input.provider_id, &failure.error),
+                        )
                     }
                 }
             }
@@ -382,6 +434,23 @@ impl Services {
         .await?;
         Ok(json!({ "text": super::clean_agent_message(&stdout) }))
     }
+}
+
+/// A failure's message without the error variant's prefix ("internal
+/// error: ") or the provider's ("codex: "): the orchestrator adds the
+/// provider again, as the local route does.
+fn bare_message(provider: &str, error: &Error) -> String {
+    let text = match error {
+        Error::Internal(message) | Error::InvalidParams(message) => message.clone(),
+        other => other.to_string(),
+    };
+    text.strip_prefix(&format!("{provider}: "))
+        .map_or_else(|| text.clone(), str::to_owned)
+}
+
+/// Whether `error` is the adapter bound refusing a slot (no free one now).
+fn is_slot_refusal(error: &Error) -> bool {
+    matches!(error, Error::AdapterBusy { .. })
 }
 
 /// The reply code of a failure that is not quota or a timeout.
@@ -601,5 +670,67 @@ mod tests {
             .await;
         assert_eq!(reply.outcome, OneShotOutcome::Unavailable);
         assert_eq!(reply.error.unwrap().code, codes::GATE_CLOSED);
+    }
+
+    /// A real frame through the machine's own route, then its reply through
+    /// the orchestrator's mapping: the text comes back unchanged, and a
+    /// failure's message carries one prefix, never two.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_machine_reply_maps_back_with_the_local_routes_shape() {
+        let (_dir, bin) = super::super::tests::fake_acp_adapter("machine", "from the machine");
+        let (_tmp, machine) = super::super::tests::services_with_settings(&[
+            ("model.defaultProvider", json!("codex")),
+            ("providers.paths", json!({ "codex": bin.to_string_lossy() })),
+        ])
+        .await;
+        let machine = machine.with_one_shot_npx(Some(bin));
+        let frame = |effort: Option<EffortCandidates>| OneShot {
+            request_id: uuid::Uuid::new_v4(),
+            operation: OneShotOperation::Complete,
+            input: OneShotInput::Complete(OneShotCompleteInput {
+                provider_id: "codex".into(),
+                prompt: "make a slug".into(),
+                system_prompt: None,
+                model: None,
+                effort,
+            }),
+            profile_env: None,
+            timeout_ms: 30_000,
+        };
+        let ok = machine.machine_one_shot(frame(None), None).await;
+        assert_eq!(ok.outcome, OneShotOutcome::Ok, "{ok:?}");
+        let failed = machine
+            .machine_one_shot(
+                frame(Some(EffortCandidates {
+                    requested: Some("ultra-max".into()),
+                    saved: Vec::new(),
+                })),
+                None,
+            )
+            .await;
+        assert_eq!(failed.outcome, OneShotOutcome::Failed, "{failed:?}");
+        let message = failed.error.as_ref().unwrap().message.clone();
+        assert!(!message.starts_with("invalid params"), "{message}");
+        assert!(!message.starts_with("internal error"), "{message}");
+        assert!(!message.starts_with("codex: "), "{message}");
+
+        let answer = |reply| MachineOneShotAnswer::Replied {
+            node_id: "node-1".into(),
+            machine: "Mac Studio".into(),
+            reply,
+        };
+        let (_t, orchestrator, _machines) = orchestrator(vec![answer(ok), answer(failed)]).await;
+        assert_eq!(
+            complete(&orchestrator).await.unwrap(),
+            json!({ "text": "from the machine" })
+        );
+        let error = complete(&orchestrator).await.unwrap_err().to_string();
+        for prefix in ["invalid params", "internal error", "codex: "] {
+            assert!(
+                error.matches(prefix).count() <= 1,
+                "{prefix} repeated: {error}"
+            );
+        }
     }
 }

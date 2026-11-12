@@ -1699,8 +1699,11 @@ pub enum MachineOneShotAnswer {
     },
     /// No machine qualified; the reason names why.
     NoMachine(String),
-    /// The chosen machine's link dropped (or timed out) before its reply.
+    /// The chosen machine's link dropped before its reply.
     Lost { machine: String },
+    /// The call's one deadline passed before the chosen machine replied;
+    /// the run there was cancelled.
+    TimedOut { machine: String, timeout_ms: u64 },
 }
 
 /// One secret frame for [`RemoteLaunchPort::machine_secret`]. `Debug`

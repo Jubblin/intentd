@@ -525,6 +525,7 @@ impl Shared {
             || !lock(&self.skills_waiters).is_empty()
             || !lock(&self.push_waiters).is_empty()
             || !lock(&self.checkout_waiters).is_empty()
+            || !lock(&self.one_shot_waiters).is_empty()
             || !lock(&self.secret_waiters).is_empty()
             || (self
                 .survivors_unclaimed
@@ -543,6 +544,7 @@ impl Shared {
             || !lock(&self.skills_waiters).is_empty()
             || !lock(&self.push_waiters).is_empty()
             || !lock(&self.checkout_waiters).is_empty()
+            || !lock(&self.one_shot_waiters).is_empty()
             || !lock(&self.secret_waiters).is_empty()
     }
 
@@ -2426,6 +2428,7 @@ async fn run(
                 lock(&shared.skills_waiters).clear();
                 lock(&shared.push_waiters).clear();
                 lock(&shared.checkout_waiters).clear();
+                lock(&shared.one_shot_waiters).clear();
                 lock(&shared.secret_waiters).clear();
                 retry = shared.wants_link();
                 if retry {
@@ -2500,6 +2503,7 @@ async fn run(
             lock(&shared.skills_waiters).clear();
             lock(&shared.push_waiters).clear();
             lock(&shared.checkout_waiters).clear();
+            lock(&shared.one_shot_waiters).clear();
             lock(&shared.secret_waiters).clear();
             shared.announce().await;
             retry = shared.wants_link();
@@ -2620,6 +2624,7 @@ async fn run(
         lock(&shared.skills_waiters).clear();
         lock(&shared.push_waiters).clear();
         lock(&shared.checkout_waiters).clear();
+        lock(&shared.one_shot_waiters).clear();
         lock(&shared.secret_waiters).clear();
         // The machine stops this binding's scripts when its link closes.
         shared

@@ -145,13 +145,31 @@ pub struct OneShotCompleteInput {
     pub effort: Option<EffortCandidates>,
 }
 
+/// `agent.enhancePrompt`'s mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EnhanceMode {
+    Enhance,
+    Layout,
+}
+
+impl EnhanceMode {
+    /// The wire spelling.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Enhance => "enhance",
+            Self::Layout => "layout",
+        }
+    }
+}
+
 /// The inputs of an `enhance` one-shot. The body is closed.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OneShotEnhanceInput {
     pub prompt: String,
-    /// `"enhance"` or `"layout"`.
-    pub mode: String,
+    pub mode: EnhanceMode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
 }
@@ -193,9 +211,10 @@ impl std::fmt::Debug for OneShotInput {
 
 /// Backend to machine (nodeProtocol 18): run one quick action with the
 /// machine's own one-shot route. No agent, lease or journal record is
-/// made. The prompt and the overlay never reach a log. The body is closed.
+/// made. The prompt and the overlay never reach a log. The body is closed,
+/// and `input` must be the inputs of `operation`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", try_from = "RawOneShot")]
 pub struct OneShot {
     pub request_id: LinkId,
     pub operation: OneShotOperation,
@@ -206,6 +225,41 @@ pub struct OneShot {
     pub profile_env: Option<LaunchProfileEnv>,
     /// What is left of the method's timeout, at most 120000.
     pub timeout_ms: u64,
+}
+
+/// [`OneShot`] as decoded, before `input` is checked against `operation`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RawOneShot {
+    request_id: LinkId,
+    operation: OneShotOperation,
+    input: Value,
+    #[serde(default)]
+    profile_env: Option<LaunchProfileEnv>,
+    timeout_ms: u64,
+}
+
+impl TryFrom<RawOneShot> for OneShot {
+    type Error = String;
+
+    fn try_from(raw: RawOneShot) -> std::result::Result<Self, Self::Error> {
+        let input = match raw.operation {
+            OneShotOperation::Complete => {
+                serde_json::from_value(raw.input).map(OneShotInput::Complete)
+            }
+            OneShotOperation::Enhance => {
+                serde_json::from_value(raw.input).map(OneShotInput::Enhance)
+            }
+        }
+        .map_err(|error| format!("oneShot input does not match its operation: {error}"))?;
+        Ok(Self {
+            request_id: raw.request_id,
+            operation: raw.operation,
+            input,
+            profile_env: raw.profile_env,
+            timeout_ms: raw.timeout_ms,
+        })
+    }
 }
 
 /// Backend to machine (nodeProtocol 18): end a running one-shot. The body

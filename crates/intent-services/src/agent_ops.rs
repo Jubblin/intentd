@@ -7514,6 +7514,8 @@ impl Services {
         model_id: String,
         provider_id: Option<String>,
     ) -> Result<Value> {
+        self.refuse_local_agent_in_orchestrator_mode(&agent_id, "agent.setModel")
+            .await?;
         let session = self.load_session_internal(&agent_id).await?;
         // A remote agent switches on its own machine (§5.54 "Switching a
         // remote agent's model"): the next turn stops its run and relaunches
@@ -9903,6 +9905,8 @@ impl Services {
         message_metadata: Option<Value>,
     ) -> Result<Value> {
         validate_submission_id(message_id.as_deref())?;
+        self.refuse_local_agent_in_orchestrator_mode(&agent_id, "agent.queueMessage")
+            .await?;
         // Attachment-reference validation (PROTOCOL §5.5) before any state
         // change, matching `agent.sendMessage`.
         validate_file_blocks("agent.queueMessage", file_blocks.as_ref())?;
@@ -10753,6 +10757,8 @@ impl Services {
         // intent-hq/intent#5669: an agent may not message itself — rejected
         // before any state change.
         reject_self_targeted_send("agent.sendMessage", &agent_id, message_metadata.as_ref())?;
+        self.refuse_local_agent_in_orchestrator_mode(&agent_id, "agent.sendMessage")
+            .await?;
         // Validate message_id length to prevent unbounded storage.
         if let Some(ref id) = message_id {
             if id.len() > MAX_MESSAGE_ID_LEN {
@@ -13863,6 +13869,9 @@ impl Services {
         // the ordered machine list (nodes.md "Batch placement").
         let mut input = input;
         if input.isolation.is_some() && input.placement.is_none() && !inherits {
+            // On an orchestrator nothing runs here: the whole call is
+            // refused before any task is admitted.
+            self.refuse_in_orchestrator_mode("agent.delegate with isolation")?;
             input.placement = Some(intent_core::placement::AgentPlacement {
                 target: Some(intent_core::placement::PlacementTarget::Local),
                 ..Default::default()
@@ -13871,7 +13880,8 @@ impl Services {
         if input.tasks.is_some() {
             // Some task runs on the backend: an explicit local placement, or
             // none from a parent that is not remote.
-            let any_on_backend = explicit_backend || (any_unplaced && !inherits);
+            let any_on_backend =
+                explicit_backend || (any_unplaced && !inherits && self.may_run_agents_locally());
             return self
                 .agent_delegate_batch_op(workspace_id, input, parent_agent_id, any_on_backend)
                 .await;
@@ -21880,6 +21890,10 @@ impl Services {
     ///
     /// Returns `Error::InvalidParams` if the agent is not in pending interrupted state (or was already resolved); `Error::Internal` if a store operation fails.
     pub async fn resume_interrupted_agent(&self, agent_id: &AgentId) -> Result<()> {
+        // Startup resume (`serve --resume-all`) and `resolveInterrupted`
+        // never start a local agent on an orchestrator; it stays listed.
+        self.refuse_local_agent_in_orchestrator_mode(agent_id, "resuming an interrupted agent")
+            .await?;
         crate::workspace_mutations::boxed(self.resume_interrupted_agent_admitted(agent_id)).await
     }
 

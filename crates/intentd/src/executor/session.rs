@@ -450,6 +450,8 @@ pub(super) async fn serve_link(
         }
     }
     streamer.abort();
+    // No quick action outlives the link that asked for it.
+    runner.cancel_all_one_shots();
     // No script outlives the link that started it.
     runner.end_binding_scripts(binding.generation).await;
 }

@@ -2239,6 +2239,34 @@ impl Services {
         !self.orchestrator_mode()
     }
 
+    /// On an orchestrator, refuse `what` for `agent_id` when it is a local
+    /// agent (created before the switch): it can never start here
+    /// (nodes.md "Orchestrator mode"). Checked at the front door, before any
+    /// queue or session write; remote agents and other daemons pass.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::OrchestratorMode`] for a local agent on an orchestrator; the
+    /// session read's error.
+    pub async fn refuse_local_agent_in_orchestrator_mode(
+        &self,
+        agent_id: &AgentId,
+        what: &str,
+    ) -> Result<()> {
+        if self.may_spawn_provider_locally() {
+            return Ok(());
+        }
+        let session = self.store.get_agent_session_summary(agent_id).await?;
+        if intent_core::remote_launch::RemotePlacementView::from_metadata(session.metadata.as_ref())
+            .is_none()
+        {
+            return Err(Error::OrchestratorMode(format!(
+                "{what} for agent {agent_id}, which runs on this backend"
+            )));
+        }
+        Ok(())
+    }
+
     /// The orchestrator-mode refusal of `what` (`-32003`,
     /// `data.code: "orchestrator-mode"`), or `Ok` on any other daemon.
     ///
@@ -30670,6 +30698,10 @@ impl WorkspaceApi for Services {
                 &agent_id,
                 message_metadata.as_ref(),
             )?;
+            // As the self-send guard: the runtime-manager path below never
+            // reaches the op's own orchestrator check.
+            self.refuse_local_agent_in_orchestrator_mode(&agent_id, "agent.sendMessage")
+                .await?;
             // Principal stamp (multiplayer w2), applied once here so the
             // runtime path (direct persist, busy enqueue, quarantine park,
             // auto-queue) and the store-only fallback persist the same
@@ -30889,6 +30921,8 @@ impl WorkspaceApi for Services {
     ) -> BoxFuture<'_, Result<serde_json::Value>> {
         self.execution_call(self.instruction_admission(async move {
             self.require_agent_member_in(&agent_id, &workspace_id)
+                .await?;
+            self.refuse_local_agent_in_orchestrator_mode(&agent_id, "agent.editAndRegenerate")
                 .await?;
             if let Some(model) = model.as_deref() {
                 reject_compound_model("model", model)?;
@@ -31209,6 +31243,8 @@ impl WorkspaceApi for Services {
     ) -> BoxFuture<'_, Result<serde_json::Value>> {
         self.execution_call(self.instruction_admission(async move {
             self.require_agent_member(&agent_id).await?;
+            self.refuse_local_agent_in_orchestrator_mode(&agent_id, "agent.retry")
+                .await?;
             if let Some(manager) = self.agent_manager() {
                 manager.agent_retry(agent_id, workspace_id).await
             } else {
@@ -31799,6 +31835,15 @@ impl WorkspaceApi for Services {
             for agent_id_str in resume_ids.iter().chain(abandon_ids.iter()) {
                 self.require_agent_member(&AgentId::from(agent_id_str.as_str()))
                     .await?;
+            }
+            // A local agent cannot resume on an orchestrator: refused before
+            // the first mutation, as the authorization above.
+            for agent_id_str in &resume_ids {
+                self.refuse_local_agent_in_orchestrator_mode(
+                    &AgentId::from(agent_id_str.as_str()),
+                    "agent.resolveInterrupted resume",
+                )
+                .await?;
             }
 
             let mut resumed = Vec::new();

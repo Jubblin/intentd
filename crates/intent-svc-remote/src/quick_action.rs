@@ -16,8 +16,20 @@ use intent_services::feature_api::Services;
 
 use crate::RemoteServicesExt as _;
 
-/// How long past the frame's own timeout the backend waits for the reply.
-const REPLY_GRACE: Duration = Duration::from_secs(10);
+/// How much of the remaining time the machine's own timer leaves for its
+/// reply to arrive (at most half of what is left).
+const REPLY_GRACE: Duration = Duration::from_secs(2);
+
+/// Less time than this left after connecting is a timeout, not a run.
+const MIN_RUN: Duration = Duration::from_millis(500);
+
+/// What the candidates depend on.
+struct Wanted<'a> {
+    workspace_id: Option<&'a intent_core::WorkspaceId>,
+    provider: &'a str,
+    with_profile: bool,
+    node_id: Option<&'a str>,
+}
 
 /// Whether `row`'s last report offers `provider` for a quick action.
 fn offers(row: &ExposedMachine, provider: &str, with_profile: bool) -> bool {
@@ -37,14 +49,14 @@ fn offers(row: &ExposedMachine, provider: &str, with_profile: bool) -> bool {
 
 /// The candidates in list order: exposed machines, and the call's
 /// workspace's running sandboxes at their entry's rank.
-async fn candidates(svc: &Services, request: &MachineOneShotRequest) -> Vec<ExposedMachine> {
+async fn candidates(svc: &Services, request: &Wanted<'_>) -> Vec<ExposedMachine> {
     let order = crate::order::current(svc).await.unwrap_or_default();
     let machines = svc
         .store()
         .list_exposed_machines()
         .await
         .unwrap_or_default();
-    let sandboxes = match &request.workspace_id {
+    let sandboxes = match request.workspace_id {
         Some(workspace) => svc
             .store()
             .list_cloud_machines()
@@ -87,7 +99,7 @@ async fn candidates(svc: &Services, request: &MachineOneShotRequest) -> Vec<Expo
                 .node_id
                 .as_ref()
                 .is_none_or(|pinned| &row.id == pinned)
-            && offers(row, &request.provider, request.with_profile)
+            && offers(row, request.provider, request.with_profile)
     });
     out
 }
@@ -106,26 +118,65 @@ pub(crate) async fn machine_one_shot(
     if !listed {
         return MachineOneShotAnswer::NoMachine(NO_QUICK_ACTION_MACHINE.to_owned());
     }
+    // One deadline for the whole call: connects to candidates and the
+    // machine's run share the method's `timeoutMs`.
+    let total = request.frame.timeout_ms;
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(total);
     let mut outdated = None;
-    for row in candidates(svc, &request).await {
+    let mut frame = request.frame;
+    for row in candidates(
+        svc,
+        &Wanted {
+            workspace_id: request.workspace_id.as_ref(),
+            provider: &request.provider,
+            with_profile: request.with_profile,
+            node_id: request.node_id.as_deref(),
+        },
+    )
+    .await
+    {
         let Ok(node) = feature.node(svc, &row.id).await else {
             continue;
         };
-        if node.shared_ref().current_link().is_none() && node.connect().await.is_err() {
-            continue;
+        if node.shared_ref().current_link().is_none() {
+            let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if !matches!(tokio::time::timeout(left, node.connect()).await, Ok(Ok(()))) {
+                continue;
+            }
         }
         if node.shared_ref().protocol() < ONE_SHOT_PROTOCOL {
             outdated.get_or_insert_with(|| row.name.clone());
             continue;
         }
-        let wait = Duration::from_millis(request.frame.timeout_ms) + REPLY_GRACE;
+        let left = deadline.saturating_duration_since(tokio::time::Instant::now());
         let machine = node.status().node_name;
-        return match node.one_shot(request.frame, wait).await {
+        if left < MIN_RUN {
+            return MachineOneShotAnswer::TimedOut {
+                machine,
+                timeout_ms: total,
+            };
+        }
+        // The machine's own timer fires first, so its `timeout` reply wins
+        // over this backend's.
+        frame.timeout_ms =
+            u64::try_from(left.saturating_sub(REPLY_GRACE.min(left / 2)).as_millis())
+                .unwrap_or(u64::MAX)
+                .max(1);
+        return match node.one_shot(frame, left).await {
             Ok(reply) => MachineOneShotAnswer::Replied {
                 node_id: row.id,
                 machine,
                 reply,
             },
+            Err(error)
+                if intent_transport::node_link::error_code(&error)
+                    == Some(intent_transport::node_link::codes::TIMEOUT) =>
+            {
+                MachineOneShotAnswer::TimedOut {
+                    machine,
+                    timeout_ms: total,
+                }
+            }
             Err(error) => {
                 tracing::info!(machine = %row.id, %error, "quick action: the machine's link dropped before its reply");
                 MachineOneShotAnswer::Lost { machine }

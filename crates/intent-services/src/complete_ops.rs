@@ -1091,7 +1091,7 @@ mod tests {
     /// RAII temp `SQLite` store: the db (and its `-wal`/`-shm` sidecars) live in
     /// a guarded temp dir removed on drop — including on panic — unless
     /// `INTENTD_TEST_KEEP_TMP` (non-empty) is set.
-    struct TempDb {
+    pub(super) struct TempDb {
         dir: tempfile::TempDir,
         path: PathBuf,
     }
@@ -1179,7 +1179,9 @@ mod tests {
     /// Services wired to a settings registry seeded with `keys`, with no
     /// auggie test seam — the routing tests drive the provider gate purely
     /// from settings.
-    async fn services_with_settings(keys: &[(&str, serde_json::Value)]) -> (TempDb, Services) {
+    pub(super) async fn services_with_settings(
+        keys: &[(&str, serde_json::Value)],
+    ) -> (TempDb, Services) {
         let tmp = TempDb::new();
         let store = Store::open(&tmp.path).await.expect("open store");
         let registry = std::sync::Arc::new(
@@ -1270,7 +1272,7 @@ mod tests {
     /// `session/new`, and one `session/prompt` with `reply` streamed as an
     /// `agent_message_chunk`.
     #[cfg(unix)]
-    fn fake_acp_adapter(tag: &str, reply: &str) -> (tempfile::TempDir, PathBuf) {
+    pub(super) fn fake_acp_adapter(tag: &str, reply: &str) -> (tempfile::TempDir, PathBuf) {
         use std::os::unix::fs::PermissionsExt;
         let dir = crate::tests::test_tempdir(&format!("intentd-complete-acp-{tag}-"));
         let script = dir.path().join("adapter.mjs");

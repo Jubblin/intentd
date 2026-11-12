@@ -5,21 +5,50 @@
 //! machine is `no-agent-machine` and a local placement is refused with
 //! `orchestrator-mode`, creating nothing; providers are only configured (no
 //! test prompt, no sign-in or install probe, no local model catalog); being
-//! exposed as a machine is refused; quick actions go to a machine over the
-//! `oneShot` frame and come back with that machine's answer; once a machine
-//! is added, unplaced agents run there.
+//! exposed as a machine is refused; quick actions are never run here; once a
+//! machine is added, unplaced agents run there.
 
 use super::*;
 
-/// A backend data dir configured as an orchestrator whose quick actions
-/// use the fixture provider.
+/// Switch a backend data dir to orchestrator mode, with Codex as the default
+/// provider of its quick actions. The daemon wrote every setting at its last start,
+/// so the existing `[daemon]` and `[model]` keys are rewritten in place.
 fn orchestrator_config(data_dir: &Path) {
-    std::fs::create_dir_all(data_dir).unwrap();
-    std::fs::write(
-        data_dir.join("config.toml"),
-        "[daemon]\nmode = \"orchestrator\"\n\n[model]\ndefaultProvider = \"mock\"\n",
-    )
-    .unwrap();
+    let path = data_dir.join("config.toml");
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut out = String::new();
+    let mut section = String::new();
+    let mut seen_mode = false;
+    let mut seen_default = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            trimmed.clone_into(&mut section);
+        }
+        if section == "[daemon]" && trimmed.starts_with("mode") {
+            out.push_str("mode = \"orchestrator\"\n");
+            seen_mode = true;
+            continue;
+        }
+        if section == "[model]" && trimmed.starts_with("defaultProvider") {
+            out.push_str("defaultProvider = \"codex\"\n");
+            seen_default = true;
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    if !seen_mode {
+        out.push_str("\n[daemon]\nmode = \"orchestrator\"\n");
+    }
+    if !seen_default {
+        if text.contains("\n[model]\n") || text.starts_with("[model]\n") {
+            out = out.replacen("[model]\n", "[model]\ndefaultProvider = \"codex\"\n", 1);
+        } else {
+            out.push_str("\n[model]\ndefaultProvider = \"codex\"\n");
+        }
+    }
+    std::fs::write(path, out).unwrap();
 }
 
 fn agent_count(list: &Value) -> usize {
@@ -42,8 +71,21 @@ async fn an_orchestrator_runs_nothing_itself() {
     git(&repo, &["add", "README.md"]);
     git(&repo, &["commit", "--quiet", "-m", "base"]);
     let head_dir = scratch.path().join("head");
+    // A local agent made while the daemon ran as a full daemon.
+    let (head, port, cfg, ws_id) = start_backend(&head_dir, &repo).await;
+    let mut rpc_ws = connect(port, cfg.clone()).await;
+    let before_switch = ok(
+        &mut rpc_ws,
+        90,
+        "agent.create",
+        json!({ "workspaceId": ws_id, "name": "Before", "model": "default", "provider": "mock" }),
+    )
+    .await;
+    let local_id = before_switch["agent"]["id"].as_str().unwrap().to_owned();
+    drop(rpc_ws);
+    drop(head);
     orchestrator_config(&head_dir);
-    let (_head, port, cfg, ws_id) = start_backend(&head_dir, &repo).await;
+    let (_head, port, cfg) = serve_backend(&head_dir, &[]).await;
     let mut rpc_ws = connect(port, cfg.clone()).await;
 
     let hello = ok(
@@ -119,6 +161,73 @@ async fn an_orchestrator_runs_nothing_itself() {
         agent_count(&before),
         "nothing was created"
     );
+
+    // The local agent from before the switch is refused, and stays listed.
+    let prompt = rpc(
+        &mut rpc_ws,
+        91,
+        "agent.sendMessage",
+        json!({ "workspaceId": ws_id, "agentId": local_id, "content": "hello" }),
+    )
+    .await;
+    assert_eq!(prompt["error"]["code"], -32003, "{prompt}");
+    assert_eq!(
+        prompt["error"]["data"]["code"], "orchestrator-mode",
+        "{prompt}"
+    );
+    let listed = ok(
+        &mut rpc_ws,
+        92,
+        "agent.list",
+        json!({ "workspaceId": ws_id }),
+    )
+    .await;
+    assert!(listed["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|agent| agent["id"] == local_id.as_str()));
+
+    // Every other way to run something here is refused too.
+    let refused = |response: &Value| response["error"]["data"]["code"] == "orchestrator-mode";
+    let isolated = rpc(
+        &mut rpc_ws,
+        93,
+        "agent.delegate",
+        json!({ "workspaceId": ws_id, "taskText": "Do it", "isolation": "direct" }),
+    )
+    .await;
+    assert!(refused(&isolated), "{isolated}");
+    let branch = String::from_utf8(
+        std::process::Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .current_dir(&repo)
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap()
+    .trim()
+    .to_owned();
+    let initial = rpc(
+        &mut rpc_ws,
+        94,
+        "workspace.create",
+        json!({
+            "repositoryPath": repo.to_string_lossy(),
+            "baseRef": branch,
+            "initialAgent": { "model": "default", "provider": "mock", "placement": { "target": "local" } },
+        }),
+    )
+    .await;
+    assert!(refused(&initial), "{initial}");
+    for (id, method) in [
+        (95, "executor.invite.create"),
+        (96, "agent.importableSessions.list"),
+    ] {
+        let response = rpc(&mut rpc_ws, id, method, json!({})).await;
+        assert!(refused(&response), "{method}: {response}");
+    }
 
     // Providers are only configured here.
     let test_prompt = rpc(
@@ -214,17 +323,30 @@ async fn an_orchestrator_runs_nothing_itself() {
     };
     assert_eq!(placed["nodeId"], machine.daemon_id.as_str(), "{placed}");
 
-    // The fixture provider has no one-shot route: the machine itself says
-    // so, which proves the frame made the round trip.
-    let quick = ok(
+    // With the machine added the call goes to the ordered list. On a host
+    // without a Codex CLI no machine offers it and the answer is the
+    // unavailable shape; with one, the machine runs it and its own failure
+    // (no sign-in in this hermetic home) comes back once-prefixed, as the
+    // local route's. Either way nothing ran on the orchestrator.
+    let quick = rpc(
         &mut rpc_ws,
         30,
         "agent.completeOnce",
         json!({ "prompt": "hi" }),
     )
     .await;
-    assert_eq!(quick["available"], false, "{quick}");
-    let reason = quick["reason"].as_str().unwrap_or_default();
-    assert!(reason.starts_with("Machine A: "), "{quick}");
-    assert!(reason.contains("not supported"), "{quick}");
+    if let Some(error) = quick.get("error") {
+        assert_eq!(error["code"], -32603, "{quick}");
+        let data = error["data"].as_str().unwrap_or_default();
+        assert!(data.starts_with("codex: "), "{quick}");
+        assert_eq!(data.matches("codex: ").count(), 1, "{quick}");
+    } else {
+        assert_eq!(quick["result"]["available"], false, "{quick}");
+        assert!(
+            quick["result"]["reason"]
+                .as_str()
+                .is_some_and(|r| !r.is_empty()),
+            "{quick}"
+        );
+    }
 }

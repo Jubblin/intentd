@@ -1025,7 +1025,7 @@ impl Runner {
             None => None,
             Some(Ok(profile)) => Some(profile),
             Some(Err(error)) => {
-                return OneShotReply::refused(id, OneShotOutcome::Failed, "profile", error)
+                return OneShotReply::refused(id, OneShotOutcome::Failed, "adapter-failed", error)
             }
         };
         let (cancel, cancelled) = tokio::sync::oneshot::channel();
@@ -1041,6 +1041,14 @@ impl Runner {
         };
         lock(&self.inner.one_shots).remove(&id);
         reply
+    }
+
+    /// End every running quick action: their link is gone, so no one waits
+    /// for the replies (node-link.md "Quick actions on the machine", rule 2).
+    pub(super) fn cancel_all_one_shots(&self) {
+        for (_, cancel) in lock(&self.inner.one_shots).drain() {
+            let _ = cancel.send(());
+        }
     }
 
     /// End a running quick action (`oneShotCancel`); an unknown or finished

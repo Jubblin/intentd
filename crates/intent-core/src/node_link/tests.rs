@@ -1985,3 +1985,31 @@ fn the_backend_trims_and_cuts_display_labels() {
         "a cut label survives the machine's check"
     );
 }
+
+/// A `oneShot` whose input does not match its operation, or with a mistyped
+/// mode, does not decode; the timeout is clamped by the machine, not here.
+#[test]
+fn one_shot_input_must_match_its_operation() {
+    let frame = |operation: &str, input: Value| {
+        json!({
+            "type": "oneShot",
+            "requestId": "00000000-0000-0000-0000-000000000001",
+            "operation": operation,
+            "input": input,
+            "timeoutMs": 999_999_999u64,
+        })
+    };
+    let enhance = json!({ "prompt": "p", "mode": "layout" });
+    let complete = json!({ "providerId": "codex", "prompt": "p" });
+    let decode = |value: Value| LinkFrame::decode(&serde_json::to_vec(&value).unwrap());
+    assert!(decode(frame("enhance", enhance.clone())).is_ok());
+    assert!(decode(frame("complete", complete.clone())).is_ok());
+    assert!(decode(frame("complete", enhance)).is_err());
+    assert!(decode(frame("enhance", complete)).is_err());
+    assert!(decode(frame("enhance", json!({ "prompt": "p", "mode": "loud" }))).is_err());
+    assert!(decode(frame(
+        "complete",
+        json!({ "providerId": "codex", "prompt": "p", "extra": 1 })
+    ))
+    .is_err());
+}
