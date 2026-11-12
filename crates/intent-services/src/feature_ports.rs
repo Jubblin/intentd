@@ -1601,9 +1601,7 @@ pub trait RemoteLaunchPort: Send + Sync + 'static {
         request: MachineOneShotRequest,
     ) -> BoxFuture<'a, MachineOneShotAnswer> {
         let _ = (svc, request);
-        Box::pin(async {
-            MachineOneShotAnswer::NoMachine(NO_QUICK_ACTION_MACHINE.to_owned())
-        })
+        Box::pin(async { MachineOneShotAnswer::NoMachine(NO_QUICK_ACTION_MACHINE.to_owned()) })
     }
 
     /// The ordered machine list's keys, most preferred first (nodes.md

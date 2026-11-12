@@ -39,7 +39,11 @@ fn offers(row: &ExposedMachine, provider: &str, with_profile: bool) -> bool {
 /// workspace's running sandboxes at their entry's rank.
 async fn candidates(svc: &Services, request: &MachineOneShotRequest) -> Vec<ExposedMachine> {
     let order = crate::order::current(svc).await.unwrap_or_default();
-    let machines = svc.store().list_exposed_machines().await.unwrap_or_default();
+    let machines = svc
+        .store()
+        .list_exposed_machines()
+        .await
+        .unwrap_or_default();
     let sandboxes = match &request.workspace_id {
         Some(workspace) => svc
             .store()
@@ -79,7 +83,10 @@ async fn candidates(svc: &Services, request: &MachineOneShotRequest) -> Vec<Expo
     }
     out.retain(|row| {
         row.state != RemoteMachineState::Revoked
-            && request.node_id.as_ref().is_none_or(|pinned| &row.id == pinned)
+            && request
+                .node_id
+                .as_ref()
+                .is_none_or(|pinned| &row.id == pinned)
             && offers(row, &request.provider, request.with_profile)
     });
     out

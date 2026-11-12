@@ -1449,10 +1449,10 @@ pub struct Services {
     /// daemon's own orchestration is off. Fixed by the composition root via
     /// [`Services::with_node_mode`] before any listener serves.
     node_mode: bool,
-    /// Orchestrator mode (`daemon.mode = "orchestrator"`): no provider
-    /// process ever starts here. Set once by
-    /// [`Services::with_orchestrator_mode`] before any listener serves.
-    orchestrator_mode: bool,
+    /// `Orchestrator` (`daemon.mode = "orchestrator"`): no provider process
+    /// ever starts here. Set once by [`Services::with_orchestrator_mode`]
+    /// before any listener serves; node mode stays in `node_mode`.
+    run_mode: intent_core::settings_file::DaemonMode,
     /// Wall-clock budget for one hook script run (60 s in production). Tests
     /// compress it via the `#[cfg(test)]`-only `with_hook_eval_timeout` so
     /// timeout-eviction coverage completes in milliseconds.
@@ -1955,7 +1955,7 @@ impl Services {
             ac_status_inflight: Arc::new(ac_status_singleflight::AcStatusSingleFlight::default()),
             hooks_max_per_agent: intent_core::config::DEFAULT_HOOKS_MAX_PER_AGENT,
             node_mode: false,
-            orchestrator_mode: false,
+            run_mode: intent_core::settings_file::DaemonMode::Regular,
             hook_eval_timeout: runtime_config::HOOK_EVAL_TIMEOUT,
             hook_clock_skew: None,
             hook_store_retry_base: runtime_config::HOOK_STORE_RETRY_BASE,
@@ -2209,14 +2209,18 @@ impl Services {
     /// by the composition root, before any listener serves.
     #[must_use]
     pub fn with_orchestrator_mode(mut self, orchestrator_mode: bool) -> Self {
-        self.orchestrator_mode = orchestrator_mode;
+        self.run_mode = if orchestrator_mode {
+            intent_core::settings_file::DaemonMode::Orchestrator
+        } else {
+            intent_core::settings_file::DaemonMode::Regular
+        };
         self
     }
 
     /// Whether this daemon runs as an orchestrator.
     #[must_use]
     pub fn orchestrator_mode(&self) -> bool {
-        self.orchestrator_mode
+        self.run_mode == intent_core::settings_file::DaemonMode::Orchestrator
     }
 
     /// Whether this daemon may run agents on its own host: the "This
@@ -2224,7 +2228,7 @@ impl Services {
     /// orchestrator.
     #[must_use]
     pub fn may_run_agents_locally(&self) -> bool {
-        !self.orchestrator_mode
+        !self.orchestrator_mode()
     }
 
     /// The one gate every site that starts a provider process passes
@@ -2232,7 +2236,7 @@ impl Services {
     /// orchestrator.
     #[must_use]
     pub fn may_spawn_provider_locally(&self) -> bool {
-        !self.orchestrator_mode
+        !self.orchestrator_mode()
     }
 
     /// The orchestrator-mode refusal of `what` (`-32003`,
@@ -2242,7 +2246,7 @@ impl Services {
     ///
     /// [`Error::OrchestratorMode`] on an orchestrator.
     pub fn refuse_in_orchestrator_mode(&self, what: &str) -> Result<()> {
-        if self.orchestrator_mode {
+        if self.orchestrator_mode() {
             return Err(Error::OrchestratorMode(format!(
                 "{what} is off: this backend runs agents only on other machines"
             )));
@@ -18320,7 +18324,7 @@ impl WorkspaceApi for Services {
         use intent_core::settings_file::DaemonMode;
         if self.node_mode {
             DaemonMode::Node
-        } else if self.orchestrator_mode {
+        } else if self.orchestrator_mode() {
             DaemonMode::Orchestrator
         } else {
             DaemonMode::Regular

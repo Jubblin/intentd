@@ -32,30 +32,84 @@ enum Spawn {
 
 /// The golden list, by path under `crates/intent-services/src/`.
 const SITES: &[(&str, Spawn)] = &[
-    ("acp_adapter.rs", Spawn::Provider("complete_once_attempt / open_scratch_adapter / models_list_op")),
+    (
+        "acp_adapter.rs",
+        Spawn::Provider("complete_once_attempt / open_scratch_adapter / models_list_op"),
+    ),
     ("agent_ops.rs", Spawn::Provider("models_list_op")),
-    ("agy_cli.rs", Spawn::Provider("host.providerDiscovery / executor_provider_capabilities")),
-    ("auggie_cli.rs", Spawn::Provider("host.providerDiscovery / executor_provider_capabilities")),
-    ("bundled_cli.rs", Spawn::Provider("prepare_provider_adapters")),
+    (
+        "agy_cli.rs",
+        Spawn::Provider("host.providerDiscovery / executor_provider_capabilities"),
+    ),
+    (
+        "auggie_cli.rs",
+        Spawn::Provider("host.providerDiscovery / executor_provider_capabilities"),
+    ),
+    (
+        "bundled_cli.rs",
+        Spawn::Provider("prepare_provider_adapters"),
+    ),
     ("clone_ops.rs", Spawn::Other("git clone of a repository")),
-    ("codex_diagnostics/catalog.rs", Spawn::Provider("models_list_op")),
-    ("codex_diagnostics/mod.rs", Spawn::Provider("models_list_op")),
-    ("cursor_cli.rs", Spawn::Provider("host.providerDiscovery / executor_provider_capabilities")),
-    ("enhance_ops.rs", Spawn::Provider("agent_enhance_prompt_op / machine_one_shot")),
-    ("host_exec.rs", Spawn::Other("the user's own command (host.exec)")),
-    ("installed_cli.rs", Spawn::Provider("host.providerDiscovery / executor_provider_capabilities")),
+    (
+        "codex_diagnostics/catalog.rs",
+        Spawn::Provider("models_list_op"),
+    ),
+    (
+        "codex_diagnostics/mod.rs",
+        Spawn::Provider("models_list_op"),
+    ),
+    (
+        "cursor_cli.rs",
+        Spawn::Provider("host.providerDiscovery / executor_provider_capabilities"),
+    ),
+    (
+        "enhance_ops.rs",
+        Spawn::Provider("agent_enhance_prompt_op / machine_one_shot"),
+    ),
+    (
+        "host_exec.rs",
+        Spawn::Other("the user's own command (host.exec)"),
+    ),
+    (
+        "installed_cli.rs",
+        Spawn::Provider("host.providerDiscovery / executor_provider_capabilities"),
+    ),
     ("lib.rs", Spawn::Other("git reads of a workspace")),
-    ("mcp_servers.rs", Spawn::Other("a user's stdio MCP server, not a provider run")),
-    ("npx_cli.rs", Spawn::Provider("host.providerDiscovery / executor_provider_capabilities")),
-    ("pi_cli.rs", Spawn::Provider("host.providerDiscovery / executor_provider_capabilities")),
-    ("plugins/ops.rs", Spawn::Other("git fetch of an agent plugin")),
-    ("provider_auth.rs", Spawn::Provider("host.providerAuthStatus / provider_profiles_auth_status_impl")),
+    (
+        "mcp_servers.rs",
+        Spawn::Other("a user's stdio MCP server, not a provider run"),
+    ),
+    (
+        "npx_cli.rs",
+        Spawn::Provider("host.providerDiscovery / executor_provider_capabilities"),
+    ),
+    (
+        "pi_cli.rs",
+        Spawn::Provider("host.providerDiscovery / executor_provider_capabilities"),
+    ),
+    (
+        "plugins/ops.rs",
+        Spawn::Other("git fetch of an agent plugin"),
+    ),
+    (
+        "provider_auth.rs",
+        Spawn::Provider("host.providerAuthStatus / provider_profiles_auth_status_impl"),
+    ),
     ("provider_cli.rs", Spawn::Provider("host.providerDiscovery")),
     ("provider_models/mod.rs", Spawn::Provider("models_list_op")),
-    ("provider_version.rs", Spawn::Provider("host.providerDiscovery / executor_provider_capabilities")),
-    ("repository_context_reader.rs", Spawn::Other("git reads of a repository")),
+    (
+        "provider_version.rs",
+        Spawn::Provider("host.providerDiscovery / executor_provider_capabilities"),
+    ),
+    (
+        "repository_context_reader.rs",
+        Spawn::Other("git reads of a repository"),
+    ),
     ("rtk.rs", Spawn::Other("the rtk output compressor")),
-    ("unsloth_server.rs", Spawn::Provider("create_agent (a local Unsloth agent)")),
+    (
+        "unsloth_server.rs",
+        Spawn::Provider("create_agent (a local Unsloth agent)"),
+    ),
 ];
 
 /// The line of every non-test `Command::new(` in `src`.

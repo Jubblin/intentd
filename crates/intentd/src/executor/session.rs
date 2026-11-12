@@ -12,8 +12,9 @@
 
 use intent_core::node_link::{
     FinalPush, LeaseBinding, LinkChannel, LinkFrame, LinkHello, LinkOutcome, LinkRpcError,
-    MachineCapabilities, PushWipResult, SkillsReply, StopId, StopOutcome, CHECKOUT_FILES_PROTOCOL, ONE_SHOT_PROTOCOL,
-    FINAL_STOP_PROTOCOL, FORGE_TOKEN_PROTOCOL, NODE_LINK_PROTOCOLS, SKILLS_PROTOCOL,
+    MachineCapabilities, PushWipResult, SkillsReply, StopId, StopOutcome, CHECKOUT_FILES_PROTOCOL,
+    FINAL_STOP_PROTOCOL, FORGE_TOKEN_PROTOCOL, NODE_LINK_PROTOCOLS, ONE_SHOT_PROTOCOL,
+    SKILLS_PROTOCOL,
 };
 use intent_core::nodes::NodeCounter;
 use intent_core::AgentId;

@@ -155,7 +155,8 @@ pub(crate) fn with_runtime_capabilities(
     frame.map(|frame| {
         let mut value: Value = serde_json::from_str(&frame).expect("encoded hello");
         if value.get("result").is_some() {
-            value["result"]["server"]["daemonMode"] = json!(crate::catalog::daemon_mode(daemon_mode));
+            value["result"]["server"]["daemonMode"] =
+                json!(crate::catalog::daemon_mode(daemon_mode));
             let capabilities = &mut value["result"]["server"]["capabilities"];
             if startup_status {
                 capabilities["startupStatus"] = json!(1);

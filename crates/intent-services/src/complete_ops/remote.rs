@@ -42,10 +42,12 @@ enum Mapped {
 }
 
 fn map_reply(provider: &str, machine: &str, reply: OneShotReply) -> Mapped {
-    let error = reply.error.unwrap_or_else(|| intent_core::node_link::OneShotFailure {
-        code: codes::ADAPTER_FAILED.to_owned(),
-        message: "the machine gave no reason".to_owned(),
-    });
+    let error = reply
+        .error
+        .unwrap_or_else(|| intent_core::node_link::OneShotFailure {
+            code: codes::ADAPTER_FAILED.to_owned(),
+            message: "the machine gave no reason".to_owned(),
+        });
     match reply.outcome {
         OneShotOutcome::Ok => Mapped::Done(json!({ "text": reply.text.unwrap_or_default() })),
         OneShotOutcome::Unavailable => {
@@ -55,7 +57,9 @@ fn map_reply(provider: &str, machine: &str, reply: OneShotReply) -> Mapped {
             "{provider}: the quick action was cancelled on {machine}"
         ))),
         OneShotOutcome::Failed => match error.code.as_str() {
-            codes::QUOTA => Mapped::Quota(Error::Internal(format!("{provider}: {}", error.message))),
+            codes::QUOTA => {
+                Mapped::Quota(Error::Internal(format!("{provider}: {}", error.message)))
+            }
             codes::EFFORT_UNSUPPORTED => Mapped::Failed(Error::InvalidParams(error.message)),
             _ => Mapped::Failed(Error::Internal(format!("{provider}: {}", error.message))),
         },
@@ -84,7 +88,9 @@ impl Services {
         let mut pinned: Option<String> = None;
         loop {
             tried.push(current.clone());
-            let plan = self.remote_launch_plan(&current, RemoteTarget::Machine).await?;
+            let plan = self
+                .remote_launch_plan(&current, RemoteTarget::Machine)
+                .await?;
             let provider = intent_providers::base_provider_id(&current).to_owned();
             let remaining = deadline.saturating_duration_since(Instant::now());
             let frame = OneShot {
@@ -106,7 +112,9 @@ impl Services {
                     .env
                     .as_ref()
                     .map(|env| LaunchProfileEnv(env.to_node_wire())),
-                timeout_ms: u64::try_from(remaining.as_millis()).unwrap_or(u64::MAX).max(1),
+                timeout_ms: u64::try_from(remaining.as_millis())
+                    .unwrap_or(u64::MAX)
+                    .max(1),
             };
             let answer = self
                 .ports
@@ -201,7 +209,9 @@ impl Services {
             MachineOneShotAnswer::Replied { machine, reply, .. } => {
                 match map_reply("auggie", &machine, reply) {
                     Mapped::Done(value) => match value.get("text").and_then(Value::as_str) {
-                        Some(text) => Ok(json!({ "enhanced": text, "original": prompt, "mode": mode })),
+                        Some(text) => {
+                            Ok(json!({ "enhanced": text, "original": prompt, "mode": mode }))
+                        }
                         None => Ok(value),
                     },
                     Mapped::Quota(error) | Mapped::Failed(error) => Err(error),
@@ -245,20 +255,26 @@ impl Services {
                 error.to_string(),
             );
         }
-        if crate::acp_adapter::adapter_slots().live() >= crate::acp_adapter::adapter_slots().limit() as usize {
+        if crate::acp_adapter::adapter_slots().live()
+            >= crate::acp_adapter::adapter_slots().limit() as usize
+        {
             return refuse(
                 OneShotOutcome::Unavailable,
                 codes::NO_CAPACITY,
                 "every adapter slot is busy (agents.maxConcurrentAdapters)".to_owned(),
             );
         }
-        let timeout = frame.timeout_ms.min(super::MAX_TIMEOUT_MS).max(1);
+        let timeout = frame.timeout_ms.clamp(1, super::MAX_TIMEOUT_MS);
         match frame.input {
             OneShotInput::Enhance(input) if frame.operation == OneShotOperation::Enhance => {
                 let auggie = match self.one_shot_auggie_bin() {
                     Ok(bin) => bin,
                     Err(error) => {
-                        return refuse(OneShotOutcome::Unavailable, codes::CLI_MISSING, error.to_string())
+                        return refuse(
+                            OneShotOutcome::Unavailable,
+                            codes::CLI_MISSING,
+                            error.to_string(),
+                        )
                     }
                 };
                 match crate::enhance_ops::enhance_with_auggie(
@@ -277,7 +293,11 @@ impl Services {
                         text: Some(text),
                         error: None,
                     },
-                    Err(error) => refuse(OneShotOutcome::Failed, failure_code(&error), error.to_string()),
+                    Err(error) => refuse(
+                        OneShotOutcome::Failed,
+                        failure_code(&error),
+                        error.to_string(),
+                    ),
                 }
             }
             OneShotInput::Complete(input) if frame.operation == OneShotOperation::Complete => {
@@ -313,7 +333,10 @@ impl Services {
                         None => refuse(
                             OneShotOutcome::Unavailable,
                             codes::CLI_MISSING,
-                            value["reason"].as_str().unwrap_or("not available").to_owned(),
+                            value["reason"]
+                                .as_str()
+                                .unwrap_or("not available")
+                                .to_owned(),
                         ),
                     },
                     Err(failure) => {
@@ -406,7 +429,10 @@ mod tests {
             let answer = self.answers.lock().unwrap().remove(0);
             Box::pin(async move { answer })
         }
-        fn placements<'a>(&'a self, _svc: &'a Services) -> BoxFuture<'a, Result<PlatformAvailability>> {
+        fn placements<'a>(
+            &'a self,
+            _svc: &'a Services,
+        ) -> BoxFuture<'a, Result<PlatformAvailability>> {
             Box::pin(async { Ok(PlatformAvailability::none(intent_core::now_iso())) })
         }
         fn placement_help<'a>(
@@ -428,7 +454,11 @@ mod tests {
                 PlatformAvailability::none(intent_core::now_iso()).unavailable(placement.clone());
             Box::pin(async move { Err(Error::PlacementUnavailable(Box::new(failure))) })
         }
-        fn launch<'a>(&'a self, _svc: &'a Services, _r: RemoteLaunchRequest) -> BoxFuture<'a, Result<()>> {
+        fn launch<'a>(
+            &'a self,
+            _svc: &'a Services,
+            _r: RemoteLaunchRequest,
+        ) -> BoxFuture<'a, Result<()>> {
             Box::pin(async { Ok(()) })
         }
         fn runtime<'a>(
@@ -444,7 +474,8 @@ mod tests {
         let tmp = TempDb::new();
         let store = Store::open(&tmp.path).await.expect("open store");
         let registry = Arc::new(
-            crate::SettingsRegistry::load(tmp.path.with_extension("config.toml")).expect("registry"),
+            crate::SettingsRegistry::load(tmp.path.with_extension("config.toml"))
+                .expect("registry"),
         );
         registry
             .apply(&[("model.defaultProvider".to_string(), json!("codex"))])
@@ -460,7 +491,11 @@ mod tests {
         (tmp, services, machines)
     }
 
-    fn replied(outcome: OneShotOutcome, text: Option<&str>, code: Option<&str>) -> MachineOneShotAnswer {
+    fn replied(
+        outcome: OneShotOutcome,
+        text: Option<&str>,
+        code: Option<&str>,
+    ) -> MachineOneShotAnswer {
         MachineOneShotAnswer::Replied {
             node_id: "node-1".into(),
             machine: "Mac Studio".into(),
@@ -488,7 +523,10 @@ mod tests {
     async fn a_quick_action_runs_on_a_machine() {
         let (_tmp, services, machines) =
             orchestrator(vec![replied(OneShotOutcome::Ok, Some("hello"), None)]).await;
-        assert_eq!(complete(&services).await.unwrap(), json!({ "text": "hello" }));
+        assert_eq!(
+            complete(&services).await.unwrap(),
+            json!({ "text": "hello" })
+        );
         let requests = machines.requests.lock().unwrap();
         let [request] = requests.as_slice() else {
             panic!("expected one request, got {requests:?}");
@@ -523,11 +561,17 @@ mod tests {
         assert_eq!(none["reason"], "no machine for quick actions is online");
         let lost = complete(&services).await.unwrap();
         assert_eq!(lost["available"], false);
-        assert!(lost["reason"].as_str().unwrap().starts_with("Mac Studio went away"));
+        assert!(lost["reason"]
+            .as_str()
+            .unwrap()
+            .starts_with("Mac Studio went away"));
         let missing = complete(&services).await.unwrap();
         assert_eq!(missing["reason"], "Mac Studio: cli-missing happened");
         let timeout = complete(&services).await.unwrap_err();
-        assert!(matches!(&timeout, Error::Internal(m) if m == "codex: timeout happened"), "{timeout:?}");
+        assert!(
+            matches!(&timeout, Error::Internal(m) if m == "codex: timeout happened"),
+            "{timeout:?}"
+        );
         let effort = complete(&services).await.unwrap_err();
         assert!(matches!(effort, Error::InvalidParams(_)), "{effort:?}");
     }

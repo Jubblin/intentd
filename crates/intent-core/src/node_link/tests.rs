@@ -92,9 +92,11 @@ fn the_daemon_to_daemon_link_speaks_protocols_7_to_16() {
     // frames, 9 final stops, 10 the prepared checkout, 11 the user MCP
     // server proxies, 12 the machine's skills, 13 sub-agent checkouts, 14
     // agent secrets on the machine, 15 the backend's forge token, 16 reads
-    // of an agent's checkout files, 17 sub-agent fetch through the backend;
-    // a protocol-7 peer still binds and runs agents.
-    assert_eq!(NODE_LINK_PROTOCOLS, ProtocolRange { min: 7, max: 17 });
+    // of an agent's checkout files, 17 sub-agent fetch through the backend,
+    // 18 an orchestrator's quick actions on the machine; a protocol-7 peer
+    // still binds and runs agents.
+    assert_eq!(NODE_LINK_PROTOCOLS, ProtocolRange { min: 7, max: 18 });
+    assert_eq!(ONE_SHOT_PROTOCOL, 18);
     assert_eq!(SCRIPT_PROTOCOL, 8);
     assert_eq!(FINAL_STOP_PROTOCOL, 9);
     assert_eq!(PREPARED_CHECKOUT_PROTOCOL, 10);
@@ -350,6 +352,8 @@ fn executor_link_requests_golden() {
             "heartbeatReply",
             "hello",
             "launch",
+            "oneShot",
+            "oneShotCancel",
             "prompt",
             "pushWip",
             "response",
@@ -667,6 +671,29 @@ fn every_frame() -> Vec<LinkFrame> {
             piece: None,
             error: Some("file-pull-not-found: out/missing".into()),
         }),
+        LinkFrame::OneShot(OneShot {
+            request_id,
+            operation: OneShotOperation::Complete,
+            input: OneShotInput::Complete(OneShotCompleteInput {
+                provider_id: "codex".into(),
+                prompt: "canary-one-shot-prompt".into(),
+                system_prompt: None,
+                model: Some("gpt-5".into()),
+                effort: Some(EffortCandidates {
+                    requested: None,
+                    saved: vec!["high".into()],
+                }),
+            }),
+            profile_env: None,
+            timeout_ms: 30_000,
+        }),
+        LinkFrame::OneShotCancel(OneShotCancel { request_id }),
+        LinkFrame::OneShotReply(OneShotReply::refused(
+            request_id,
+            OneShotOutcome::Unavailable,
+            "no-capacity",
+            "every adapter slot is busy",
+        )),
     ]
 }
 
@@ -1202,7 +1229,13 @@ fn script_frames_need_protocol_8_skills_frames_12_and_push_frames_13() {
             frame,
             LinkFrame::CheckoutRead(_) | LinkFrame::CheckoutReadReply(_)
         );
-        let expected = if checkout {
+        let one_shot = matches!(
+            frame,
+            LinkFrame::OneShot(_) | LinkFrame::OneShotCancel(_) | LinkFrame::OneShotReply(_)
+        );
+        let expected = if one_shot {
+            ONE_SHOT_PROTOCOL
+        } else if checkout {
             CHECKOUT_FILES_PROTOCOL
         } else if forge {
             FORGE_TOKEN_PROTOCOL

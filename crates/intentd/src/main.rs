@@ -487,7 +487,8 @@ async fn async_main(cli: Cli) -> ExitCode {
                     resume_all,
                     mode_flag(node, orchestrator),
                 )
-                .await {
+                .await
+                {
                     Ok(code) => {
                         serve.complete();
                         code
@@ -10884,14 +10885,23 @@ for line in sys.stdin:
     fn the_daemon_mode_is_the_flag_or_the_setting() {
         use intent_core::settings_file::DaemonMode;
         let none = None;
-        assert_eq!(resolve_daemon_mode(none, DaemonMode::Regular), DaemonMode::Regular);
-        assert_eq!(resolve_daemon_mode(none, DaemonMode::Node), DaemonMode::Node);
+        assert_eq!(
+            resolve_daemon_mode(none, DaemonMode::Regular),
+            DaemonMode::Regular
+        );
+        assert_eq!(
+            resolve_daemon_mode(none, DaemonMode::Node),
+            DaemonMode::Node
+        );
         assert_eq!(
             resolve_daemon_mode(none, DaemonMode::Orchestrator),
             DaemonMode::Orchestrator
         );
         let node = mode_flag(true, false);
-        assert_eq!(resolve_daemon_mode(node, DaemonMode::Orchestrator), DaemonMode::Node);
+        assert_eq!(
+            resolve_daemon_mode(node, DaemonMode::Orchestrator),
+            DaemonMode::Node
+        );
         let orchestrator = mode_flag(false, true);
         assert_eq!(
             resolve_daemon_mode(orchestrator, DaemonMode::Node),
@@ -10899,7 +10909,10 @@ for line in sys.stdin:
         );
         assert_eq!(mode_flag(false, false), None);
         assert!(Cli::try_parse_from(["intentd", "serve", "--node", "--orchestrator"]).is_err());
-        match Cli::try_parse_from(["intentd", "serve", "--orchestrator"]).unwrap().command {
+        match Cli::try_parse_from(["intentd", "serve", "--orchestrator"])
+            .unwrap()
+            .command
+        {
             Command::Serve { orchestrator, .. } => assert!(orchestrator),
             other => panic!("expected Serve, got {other:?}"),
         }

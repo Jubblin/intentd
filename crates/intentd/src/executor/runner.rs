@@ -1017,7 +1017,11 @@ impl Runner {
                 "quick actions do not run on this machine",
             );
         };
-        let profile = match frame.profile_env.as_ref().map(|wire| self.node_profile(&wire.0)) {
+        let profile = match frame
+            .profile_env
+            .as_ref()
+            .map(|wire| self.node_profile(&wire.0))
+        {
             None => None,
             Some(Ok(profile)) => Some(profile),
             Some(Err(error)) => {

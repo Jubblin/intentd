@@ -363,8 +363,7 @@ pub(crate) struct Shared {
     /// (nodeProtocol 14).
     secret_waiters: Mutex<HashMap<LinkId, oneshot::Sender<SecretReply>>>,
     /// `oneShot`s waiting for their reply (nodeProtocol 18).
-    one_shot_waiters:
-        Mutex<HashMap<LinkId, oneshot::Sender<intent_core::node_link::OneShotReply>>>,
+    one_shot_waiters: Mutex<HashMap<LinkId, oneshot::Sender<intent_core::node_link::OneShotReply>>>,
     /// Secret forgets for a machine that was not connected (nodeProtocol
     /// 14): sent after the next bind. Memory only; a backend restart drops
     /// them, and its new `headSession` drops the values on the machine.

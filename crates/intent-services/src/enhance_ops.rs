@@ -308,9 +308,15 @@ impl Services {
                 .ok_or_else(|| Error::Internal("auggie CLI not found".to_string()))?,
         };
         let timeout = timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS).min(MAX_TIMEOUT_MS);
-        let enhanced =
-            enhance_with_auggie(&auggie, &prompt, &mode, model.as_deref(), cwd.as_deref(), timeout)
-                .await?;
+        let enhanced = enhance_with_auggie(
+            &auggie,
+            &prompt,
+            &mode,
+            model.as_deref(),
+            cwd.as_deref(),
+            timeout,
+        )
+        .await?;
         Ok(json!({ "enhanced": enhanced, "original": prompt, "mode": mode }))
     }
 }

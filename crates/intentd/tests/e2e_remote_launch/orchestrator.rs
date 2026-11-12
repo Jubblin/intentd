@@ -54,7 +54,10 @@ async fn an_orchestrator_runs_nothing_itself() {
     )
     .await;
     assert_eq!(hello["server"]["daemonMode"], "orchestrator", "{hello}");
-    assert_eq!(hello["server"]["capabilities"]["machineOrder"], 1, "{hello}");
+    assert_eq!(
+        hello["server"]["capabilities"]["machineOrder"], 1,
+        "{hello}"
+    );
     let status = ok(&mut rpc_ws, 2, "host.status", json!({})).await;
     assert_eq!(status["daemonMode"], "orchestrator", "{status}");
 
@@ -71,10 +74,15 @@ async fn an_orchestrator_runs_nothing_itself() {
     assert_eq!(stale["error"]["data"]["code"], "order-stale", "{stale}");
 
     // Nowhere to run an agent: refused before anything is written.
-    let before = ok(&mut rpc_ws, 5, "agent.list", json!({ "workspaceId": ws_id })).await;
+    let before = ok(
+        &mut rpc_ws,
+        5,
+        "agent.list",
+        json!({ "workspaceId": ws_id }),
+    )
+    .await;
     let create = |placement: Option<Value>| {
-        let mut params =
-            json!({ "workspaceId": ws_id, "name": "Agent", "model": "default", "provider": "mock" });
+        let mut params = json!({ "workspaceId": ws_id, "name": "Agent", "model": "default", "provider": "mock" });
         if let Some(placement) = placement {
             params["placement"] = placement;
         }
@@ -95,9 +103,22 @@ async fn an_orchestrator_runs_nothing_itself() {
     )
     .await;
     assert_eq!(local["error"]["code"], -32003, "{local}");
-    assert_eq!(local["error"]["data"]["code"], "orchestrator-mode", "{local}");
-    let after = ok(&mut rpc_ws, 8, "agent.list", json!({ "workspaceId": ws_id })).await;
-    assert_eq!(agent_count(&after), agent_count(&before), "nothing was created");
+    assert_eq!(
+        local["error"]["data"]["code"], "orchestrator-mode",
+        "{local}"
+    );
+    let after = ok(
+        &mut rpc_ws,
+        8,
+        "agent.list",
+        json!({ "workspaceId": ws_id }),
+    )
+    .await;
+    assert_eq!(
+        agent_count(&after),
+        agent_count(&before),
+        "nothing was created"
+    );
 
     // Providers are only configured here.
     let test_prompt = rpc(
@@ -109,10 +130,19 @@ async fn an_orchestrator_runs_nothing_itself() {
     .await;
     assert_eq!(test_prompt["error"]["code"], -32003, "{test_prompt}");
     assert_eq!(test_prompt["error"]["data"]["code"], "orchestrator-mode");
-    let auth = ok(&mut rpc_ws, 11, "host.providerAuthStatus", json!({ "force": true })).await;
+    let auth = ok(
+        &mut rpc_ws,
+        11,
+        "host.providerAuthStatus",
+        json!({ "force": true }),
+    )
+    .await;
     let rows = auth["providers"].as_array().unwrap();
     assert!(!rows.is_empty(), "{auth}");
-    assert!(rows.iter().all(|row| row["authenticated"].is_null()), "{auth}");
+    assert!(
+        rows.iter().all(|row| row["authenticated"].is_null()),
+        "{auth}"
+    );
     let discovery = ok(&mut rpc_ws, 12, "host.providerDiscovery", json!({})).await;
     assert_eq!(discovery["providers"], json!([]), "{discovery}");
     let catalog = ok(&mut rpc_ws, 13, "providers.catalog", json!({})).await;
@@ -121,7 +151,13 @@ async fn an_orchestrator_runs_nothing_itself() {
         .unwrap()
         .iter()
         .all(|row| row["supportsTestPrompt"] == false));
-    let models = ok(&mut rpc_ws, 14, "models.list", json!({ "providerId": "codex" })).await;
+    let models = ok(
+        &mut rpc_ws,
+        14,
+        "models.list",
+        json!({ "providerId": "codex" }),
+    )
+    .await;
     assert_eq!(models["models"], json!([]), "{models}");
 
     // An orchestrator is never exposed as a machine.
@@ -135,7 +171,13 @@ async fn an_orchestrator_runs_nothing_itself() {
     assert_eq!(mint["error"]["data"]["code"], "orchestrator-mode", "{mint}");
 
     // A quick action with no machine is unavailable, never local.
-    let quick = ok(&mut rpc_ws, 16, "agent.completeOnce", json!({ "prompt": "hi" })).await;
+    let quick = ok(
+        &mut rpc_ws,
+        16,
+        "agent.completeOnce",
+        json!({ "prompt": "hi" }),
+    )
+    .await;
     assert_eq!(quick["available"], false, "{quick}");
     assert!(quick["reason"]
         .as_str()
@@ -174,7 +216,13 @@ async fn an_orchestrator_runs_nothing_itself() {
 
     // The fixture provider has no one-shot route: the machine itself says
     // so, which proves the frame made the round trip.
-    let quick = ok(&mut rpc_ws, 30, "agent.completeOnce", json!({ "prompt": "hi" })).await;
+    let quick = ok(
+        &mut rpc_ws,
+        30,
+        "agent.completeOnce",
+        json!({ "prompt": "hi" }),
+    )
+    .await;
     assert_eq!(quick["available"], false, "{quick}");
     let reason = quick["reason"].as_str().unwrap_or_default();
     assert!(reason.starts_with("Machine A: "), "{quick}");

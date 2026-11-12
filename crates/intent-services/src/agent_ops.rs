@@ -3321,9 +3321,7 @@ fn is_placement_refusal(error: &Error) -> bool {
 /// it here instead.
 fn inherited_placement_hint(node_name: &str, backend_runs_agents: bool) -> String {
     if !backend_runs_agents {
-        return format!(
-            "The sub-agent defaults to \"{node_name}\" because its parent runs there."
-        );
+        return format!("The sub-agent defaults to \"{node_name}\" because its parent runs there.");
     }
     format!(
         "The sub-agent defaults to \"{node_name}\" because its parent runs there; pass placement {{ target: \"local\" }} to run it on the backend."
@@ -6126,7 +6124,10 @@ impl Services {
                     view
                 }
                 (Err(error), Some(node_name)) => {
-                    return Err(error.with_hint(&inherited_placement_hint(&node_name, self.may_run_agents_locally())))
+                    return Err(error.with_hint(&inherited_placement_hint(
+                        &node_name,
+                        self.may_run_agents_locally(),
+                    )))
                 }
                 (Err(error), None) => return Err(error),
             };
