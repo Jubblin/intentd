@@ -742,14 +742,17 @@ or path. Long labels truncate; hover to read the full name. Repository-specific
 views identify the repository in the page heading.
 
 **Home → Workspaces** has a **This machine / All machines** switch. **All machines**
-lists the workspaces on every connected machine, one section per machine (this
-window's machine first): title, repository and branch, status and last activity.
-Select a workspace, or move with the arrow keys and press Enter, to open it in that
-machine's own window (opened or focused first). An offline or slow machine shows its
-own message and **Retry** while the others still list; **Refresh** reloads all. If a
-machine's window cannot be opened, that machine's section says so. Only the desktop
-app can reach other machines: in the web build, **All machines** says it needs the
-desktop app.
+shows the workspaces on every connected machine in one list, with the same search,
+status filters, view options (list or board), grouping and rows as **This machine**,
+and a small tag on each row naming its machine. Those controls are shared, so a
+filter or grouping you choose applies to both. Select a workspace, or move with the
+arrow keys and press Enter, to open it in that machine's own window (opened or
+focused first). Pinning, set-aside, labels and row menus act only on this window's
+machine, so they are not offered for other machines' workspaces. A machine that is
+offline or slow gets its own notice with **Retry** while the others still list;
+**Refresh** reloads all. If a machine's window cannot be opened, a notice says so.
+Archived workspaces are not listed. Only the desktop app can reach other machines:
+in the web build, **All machines** says it needs the desktop app.
 
 Grouped by status, Home sorts workspaces into **Needs you**, **Running**, **Waiting**,
 and **Done & idle**, in that priority order. **Running** covers an agent at work, a
