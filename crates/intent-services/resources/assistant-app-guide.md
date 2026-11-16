@@ -751,7 +751,7 @@ focused first). Pinning, set-aside, labels and row menus act only on this window
 machine, so they are not offered for other machines' workspaces. A machine that is
 offline or slow gets its own notice with **Retry** while the others still list;
 **Refresh** reloads all. If a machine's window cannot be opened, a notice says so.
-Archived workspaces are not listed. Only the desktop app can reach other machines:
+The **Archived** filter lists archived workspaces from every machine. Only the desktop app can reach other machines:
 in the web build, **All machines** says it needs the desktop app.
 
 Grouped by status, Home sorts workspaces into **Needs you**, **Running**, **Waiting**,
